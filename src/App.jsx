@@ -155,12 +155,66 @@ function App() {
     setWeeklyMeals(updatedMeals)
     createShoppingList(updatedMeals)
   }
+function createShoppingList(meals) {
+  const allIngredients = meals.flatMap((item) => item.meal.ingredients)
+  const uniqueIngredients = [...new Set(allIngredients)]
 
-  function createShoppingList(meals) {
-    const allIngredients = meals.flatMap((item) => item.meal.ingredients)
-    const uniqueIngredients = [...new Set(allIngredients)]
-    setShoppingList(uniqueIngredients)
+  const categories = {
+    Produce: [],
+    Meat: [],
+    Dairy: [],
+    Pantry: [],
+    Other: []
   }
+
+  uniqueIngredients.forEach((ingredient) => {
+    const item = ingredient.toLowerCase()
+
+    if (
+      item.includes("lettuce") ||
+      item.includes("tomato") ||
+      item.includes("onion") ||
+      item.includes("pepper") ||
+      item.includes("potato") ||
+      item.includes("carrot") ||
+      item.includes("spinach") ||
+      item.includes("avocado")
+    ) {
+      categories.Produce.push(ingredient)
+    } else if (
+      item.includes("beef") ||
+      item.includes("chicken") ||
+      item.includes("pork") ||
+      item.includes("turkey") ||
+      item.includes("sausage") ||
+      item.includes("bacon")
+    ) {
+      categories.Meat.push(ingredient)
+    } else if (
+      item.includes("cheese") ||
+      item.includes("milk") ||
+      item.includes("cream") ||
+      item.includes("yogurt") ||
+      item.includes("butter")
+    ) {
+      categories.Dairy.push(ingredient)
+    } else if (
+      item.includes("rice") ||
+      item.includes("pasta") ||
+      item.includes("noodle") ||
+      item.includes("tortilla") ||
+      item.includes("bread") ||
+      item.includes("sauce") ||
+      item.includes("beans")
+    ) {
+      categories.Pantry.push(ingredient)
+    } else {
+      categories.Other.push(ingredient)
+    }
+  })
+
+  setShoppingList(categories)
+}
 
   if (!session) {
     return (
@@ -286,11 +340,19 @@ function App() {
 
           {shoppingList.length === 0 && <p className="empty">Your grocery list will appear here.</p>}
 
-          {shoppingList.map((ingredient, index) => (
-            <div className="shopping-item" key={index}>
-              {ingredient}
-            </div>
-          ))}
+          {Object.entries(shoppingList).map(([category, items]) => (
+  items.length > 0 && (
+    <div key={category}>
+      <h3>{category}</h3>
+
+      {items.map((ingredient, index) => (
+        <div className="shopping-item" key={index}>
+          {ingredient}
+        </div>
+      ))}
+    </div>
+  )
+))}
         </section>
       </main>
     </div>
