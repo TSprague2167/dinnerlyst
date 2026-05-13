@@ -138,4 +138,20 @@ button {
   .grid {
     grid-template-columns: repeat(3, 1fr);
   }
+}.auth-card {
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.secondary-button {
+  padding: 14px 18px;
+  background-color: #7C4A35;
+  color: white;
+}
+
+.logout-button {
+  margin-top: 16px;
+  padding: 10px 16px;
+  background-color: #7C4A35;
+  color: white;
 }

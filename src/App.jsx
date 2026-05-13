@@ -3,6 +3,9 @@ import { supabase } from './supabase'
 import './App.css'
 
 function App() {
+  const [session, setSession] = useState(null)
+  const [authEmail, setAuthEmail] = useState("")
+  const [authPassword, setAuthPassword] = useState("")
   const [recipes, setRecipes] = useState([])
   const [recipeName, setRecipeName] = useState("")
   const [ingredients, setIngredients] = useState("")
@@ -12,12 +15,64 @@ function App() {
   const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
   useEffect(() => {
-    getRecipes()
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+    })
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+
+    return () => {
+      listener.subscription.unsubscribe()
+    }
   }, [])
+
+  useEffect(() => {
+    if (session) {
+      getRecipes()
+    }
+  }, [session])
+
+  async function signUp() {
+    const { error } = await supabase.auth.signUp({
+      email: authEmail,
+      password: authPassword
+    })
+
+    if (error) {
+      alert(error.message)
+      return
+    }
+
+    alert("Check your email to confirm your account.")
+  }
+
+  async function login() {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: authEmail,
+      password: authPassword
+    })
+
+    if (error) {
+      alert(error.message)
+      return
+    }
+
+    setAuthEmail("")
+    setAuthPassword("")
+  }
+
+  async function logout() {
+    await supabase.auth.signOut()
+    setRecipes([])
+    setWeeklyMeals([])
+    setShoppingList([])
+  }
 
   async function getRecipes() {
     const { data, error } = await supabase.from('recipes').select('*')
-
+.eq('user_id', session.user.id)
     if (error) {
       console.log(error)
       return
@@ -37,8 +92,14 @@ function App() {
 
     const { data, error } = await supabase
       .from('recipes')
-      .insert([{ name: recipeName, ingredients }])
-      .select()
+     .insert([
+  {
+    name: recipeName,
+    ingredients,
+    user_id: session.user.id
+  }
+])
+.select() 
 
     if (error) {
       console.log(error)
@@ -101,11 +162,54 @@ function App() {
     setShoppingList(uniqueIngredients)
   }
 
+  if (!session) {
+    return (
+      <div className="app">
+        <header className="hero">
+          <h1>Dinnerlyst</h1>
+          <p>Log in or create an account to save your recipes.</p>
+        </header>
+
+        <section className="card auth-card">
+          <h2>Account</h2>
+
+          <div className="form">
+            <input
+              type="email"
+              placeholder="Email"
+              value={authEmail}
+              onChange={(e) => setAuthEmail(e.target.value)}
+            />
+
+            <input
+              type="password"
+              placeholder="Password"
+              value={authPassword}
+              onChange={(e) => setAuthPassword(e.target.value)}
+            />
+
+            <button className="primary-button" onClick={login}>
+              Log In
+            </button>
+
+            <button className="secondary-button" onClick={signUp}>
+              Sign Up
+            </button>
+          </div>
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div className="app">
       <header className="hero">
         <h1>Dinnerlyst</h1>
         <p>Weekly meal planning made simple.</p>
+
+        <button className="logout-button" onClick={logout}>
+          Log Out
+        </button>
       </header>
 
       <section className="card">
