@@ -129,6 +129,7 @@ function App() {
   }
 
   function generateWeeklyMeals() {
+    const randomMeals = []
     if (recipes.length === 0) return
 
     const meals = daysOfWeek.map((day) => {
