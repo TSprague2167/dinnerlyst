@@ -10,6 +10,7 @@ function App() {
   const [recipeName, setRecipeName] = useState("")
   const [ingredients, setIngredients] = useState("")
   const [weeklyMeals, setWeeklyMeals] = useState([])
+  const [lockedDays, setLockedDays] = useState([])
   const [shoppingList, setShoppingList] = useState([])
 
   const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -127,37 +128,76 @@ function App() {
 
     setRecipes(recipes.filter((recipe) => recipe.id !== id))
   }
-
+function toggleDayLock(day) {
+  if (lockedDays.includes(day)) {
+    setLockedDays(lockedDays.filter((lockedDay) => lockedDay !== day))
+  } else {
+    setLockedDays([...lockedDays, day])
+  }
+}
   function generateWeeklyMeals() {
     const randomMeals = []
     if (recipes.length === 0) return
 
     const meals = daysOfWeek.map((day) => {
-      const randomIndex = Math.floor(Math.random() * recipes.length)
-      return { day, meal: recipes[randomIndex] }
-    })
+
+  const existingMeal = weeklyMeals.find(
+    (meal) => meal.day === day
+  )
+
+  if (lockedDays.includes(day) && existingMeal) {
+    return existingMeal
+  }
+
+  const randomIndex = Math.floor(
+    Math.random() * recipes.length
+  )
+
+  return {
+    day,
+    meal: recipes[randomIndex]
+  }
+})
 
     setWeeklyMeals(meals)
     createShoppingList(meals)
   }
 
-  function regenerateMeal(dayToChange) {
-    if (recipes.length === 0) return
+ function regenerateMeal(dayToChange) {
+  console.log("dayToChange:", dayToChange)
+ console.log("lockedDays:", lockedDays) 
+  if (recipes.length === 0) return
 
-    const updatedMeals = weeklyMeals.map((item) => {
-      if (item.day === dayToChange) {
-        const randomIndex = Math.floor(Math.random() * recipes.length)
-        return { day: item.day, meal: recipes[randomIndex] }
-      }
-
-      return item
-    })
-
-    setWeeklyMeals(updatedMeals)
-    createShoppingList(updatedMeals)
+  if (lockedDays.includes(dayToChange)) {
+    return
   }
+
+  const updatedMeals = weeklyMeals.map((item) => {
+    if (item.day === dayToChange) {
+      const randomIndex = Math.floor(Math.random() * recipes.length)
+
+      return {
+        day: item.day,
+        meal: recipes[randomIndex]
+      }
+    }
+
+    return item
+  })
+
+  setWeeklyMeals(updatedMeals)
+  createShoppingList(updatedMeals)
+}
 function createShoppingList(meals) {
   const allIngredients = meals.flatMap((item) => item.meal.ingredients)
+
+  const ingredientCounts = {}
+
+  allIngredients.forEach((ingredient) => {
+    ingredientCounts[ingredient] =
+      (ingredientCounts[ingredient] || 0) + 1
+  })
+
   const uniqueIngredients = [...new Set(allIngredients)]
 
   const categories = {
@@ -171,6 +211,9 @@ function createShoppingList(meals) {
   uniqueIngredients.forEach((ingredient) => {
     const item = ingredient.toLowerCase()
 
+    const formattedIngredient =
+      `${ingredient} (${ingredientCounts[ingredient]})`
+
     if (
       item.includes("lettuce") ||
       item.includes("tomato") ||
@@ -181,7 +224,8 @@ function createShoppingList(meals) {
       item.includes("spinach") ||
       item.includes("avocado")
     ) {
-      categories.Produce.push(ingredient)
+      categories.Produce.push(formattedIngredient)
+
     } else if (
       item.includes("beef") ||
       item.includes("chicken") ||
@@ -190,7 +234,8 @@ function createShoppingList(meals) {
       item.includes("sausage") ||
       item.includes("bacon")
     ) {
-      categories.Meat.push(ingredient)
+      categories.Meat.push(formattedIngredient)
+
     } else if (
       item.includes("cheese") ||
       item.includes("milk") ||
@@ -198,7 +243,8 @@ function createShoppingList(meals) {
       item.includes("yogurt") ||
       item.includes("butter")
     ) {
-      categories.Dairy.push(ingredient)
+      categories.Dairy.push(formattedIngredient)
+
     } else if (
       item.includes("rice") ||
       item.includes("pasta") ||
@@ -208,9 +254,10 @@ function createShoppingList(meals) {
       item.includes("sauce") ||
       item.includes("beans")
     ) {
-      categories.Pantry.push(ingredient)
+      categories.Pantry.push(formattedIngredient)
+
     } else {
-      categories.Other.push(ingredient)
+      categories.Other.push(formattedIngredient)
     }
   })
 
@@ -332,6 +379,9 @@ function createShoppingList(meals) {
               <button className="small-button" onClick={() => regenerateMeal(item.day)}>
                 Regenerate
               </button>
+              <button className="small-button" onClick={() => toggleDayLock(item.day)}>
+  {lockedDays.includes(item.day) ? "Unlock" : "Lock"}
+</button>
             </div>
           ))}
         </section>
