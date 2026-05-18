@@ -348,7 +348,10 @@ function createShoppingList(meals) {
 
       {items.map((ingredient, index) => (
         <div className="shopping-item" key={index}>
-          {ingredient}
+         <>
+  <input type="checkbox" />
+  {ingredient}
+</> 
         </div>
       ))}
     </div>

@@ -93,6 +93,9 @@ button {
 .recipe-card,
 .meal-card,
 .shopping-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   background-color: #FFF8F2;
   padding: 14px;
   border-radius: 14px;
