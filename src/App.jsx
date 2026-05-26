@@ -9,7 +9,10 @@ function App() {
   const [recipes, setRecipes] = useState([])
   const [recipeName, setRecipeName] = useState("")
   const [ingredients, setIngredients] = useState("")
-  const [weeklyMeals, setWeeklyMeals] = useState([])
+  const [weeklyMeals, setWeeklyMeals] = useState(() => {
+  const savedMeals = localStorage.getItem("weeklyMeals")
+  return savedMeals ? JSON.parse(savedMeals) : []
+})
   const [lockedDays, setLockedDays] = useState([])
   const [shoppingList, setShoppingList] = useState([])
 
@@ -28,6 +31,13 @@ function App() {
       listener.subscription.unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+  localStorage.setItem(
+    "weeklyMeals",
+    JSON.stringify(weeklyMeals)
+  )
+}, [weeklyMeals])
 
   useEffect(() => {
     if (session) {
