@@ -30,7 +30,8 @@ body {
 
 .hero p {
   font-size: 20px;
-  color: #555;
+  color: #666;
+  font-weight: 400;
 }
 
 .card {
@@ -39,6 +40,7 @@ body {
   padding: 28px;
   box-shadow: 0 10px 30px rgba(0,0,0,.08);
   margin-bottom: 20px;
+  margin-top: 30px;
 }
 
 .card h2 {
@@ -94,7 +96,13 @@ button {
 .grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 20px;
+  gap: 24px;
+}
+
+@media (min-width: 1000px) {
+  .grid {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
 }
 
 .recipe-card,
@@ -102,6 +110,8 @@ button {
 .shopping-item {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
   gap: 8px;
   background-color: #FFF8F2;
   padding: 14px;
@@ -172,4 +182,22 @@ button {
 
 button:hover {
   transform: translateY(-2px);
+}
+
+.hero-stats {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 10px 0 18px;
+}
+
+.hero-stats p {
+  background: #FFF8F2;
+  border: 1px solid #E7DDD5;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 14px;
+  color: #7C4A35;
+  margin: 0;
 }

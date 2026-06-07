@@ -17,7 +17,7 @@ function App() {
   const [shoppingList, setShoppingList] = useState([])
 
   const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-
+const [editingRecipeId, setEditingRecipeId] = useState(null)
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session)
@@ -101,16 +101,37 @@ function App() {
   async function addRecipe() {
     if (recipeName.trim() === "" || ingredients.trim() === "") return
 
-    const { data, error } = await supabase
-      .from('recipes')
-     .insert([
-  {
-    name: recipeName,
-    ingredients,
-    user_id: session.user.id
-  }
-])
-.select() 
+    let data, error
+
+if (editingRecipeId) {
+  const result = await supabase
+    .from('recipes')
+    .update({
+      name: recipeName,
+      ingredients
+    })
+    .eq('id', editingRecipeId)
+    .select()
+
+  data = result.data
+  error = result.error
+
+} else {
+
+  const result = await supabase
+    .from('recipes')
+    .insert([
+      {
+        name: recipeName,
+        ingredients,
+        user_id: session.user.id
+      }
+    ])
+    .select()
+
+  data = result.data
+  error = result.error
+}
 
     if (error) {
       console.log(error)
@@ -319,6 +340,11 @@ function createShoppingList(meals) {
         <h1>Dinnerlyst</h1>
         <p>Weekly meal planning made simple.</p>
 
+        <div className="hero-stats">
+          <p>{recipes.length} Recipes Saved </p>
+          <p>Plan your week in seconds</p>
+        </div>
+
         <button className="logout-button" onClick={logout}>
           Log Out
         </button>
@@ -334,6 +360,7 @@ function createShoppingList(meals) {
             value={recipeName}
             onChange={(e) => setRecipeName(e.target.value)}
           />
+   
 
           <input
             type="text"
@@ -350,32 +377,50 @@ function createShoppingList(meals) {
 
       <section className="action-section">
         <button className="generate-button" onClick={generateWeeklyMeals}>
-          Generate Weekly Meals + Shopping List
+          🍽️ Generate Weekly Meals + Shopping List
         </button>
       </section>
 
       <main className="grid">
         <section className="card">
-          <h2>Your Recipes</h2>
+          <h2>📖 Your Recipes</h2>
 
           {recipes.length === 0 && <p className="empty">No recipes yet.</p>}
-
+           
           {recipes.map((recipe) => (
             <div className="recipe-card" key={recipe.id}>
-              <div>
-                <strong>{recipe.name}</strong>
-                <p>{recipe.ingredients.join(", ")}</p>
-              </div>
+    <div>
+  <strong>{recipe.name}</strong>
+  <p>{recipe.ingredients.join(", ")}</p>
+</div>
 
-              <button className="delete-button" onClick={() => deleteRecipe(recipe.id)}>
-                Delete
-              </button>
+<div>
+
+  <button
+    className="small-button"
+    onClick={() => {
+      setRecipeName(recipe.name)
+      setIngredients(recipe.ingredients.join(", "))
+      setEditingRecipeId(recipe.id)
+    }}
+  >
+    ✏️ Edit
+  </button>
+
+  <button
+    className="delete-button"
+    onClick={() => deleteRecipe(recipe.id)}
+  >
+    Delete
+  </button>
+
+</div>
             </div>
           ))}
         </section>
 
         <section className="card">
-          <h2>Weekly Meal Plan</h2>
+          <h2>🍽️Weekly Meal Plan</h2>
 
           {weeklyMeals.length === 0 && <p className="empty">Generate meals to see your week.</p>}
 
@@ -387,7 +432,7 @@ function createShoppingList(meals) {
               </div>
 
               <button className="small-button" onClick={() => regenerateMeal(item.day)}>
-                Regenerate
+                🔄 Regenerate
               </button>
               <button className="small-button" onClick={() => toggleDayLock(item.day)}>
   {lockedDays.includes(item.day) ? "Unlock" : "Lock"}
@@ -397,7 +442,7 @@ function createShoppingList(meals) {
         </section>
 
         <section className="card">
-          <h2>Shopping List</h2>
+          <h2>🛒Shopping List</h2>
 
           {shoppingList.length === 0 && <p className="empty">Your grocery list will appear here.</p>}
 
