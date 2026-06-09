@@ -14,8 +14,6 @@ function App() {
   return savedMeals ? JSON.parse(savedMeals) : []
 })
   const [lockedDays, setLockedDays] = useState([])
-  const [searchTerm, setSearchTerm] = useState("")
-  const [category, setCategory] = useState("Dinner")
   const [shoppingList, setShoppingList] = useState([])
 
   const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -55,7 +53,6 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
 
     if (error) {
       alert(error.message)
-      console.log(error)
       return
     }
 
@@ -107,21 +104,19 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
     let data, error
 
 if (editingRecipeId) {
+  console.log("Editing recipe:", editingRecipeId)
   const result = await supabase
     .from('recipes')
     .update({
       name: recipeName,
-      ingredients,
-      category,
+      ingredients
     })
-    .eq('id', (editingRecipeId))
-
-    .select("*")
-    alert(JSON.stringify(result))
+    .eq('id', editingRecipeId)
+    .select()
 
   data = result.data
   error = result.error
-alert(JSON.stringify(data))
+
 } else {
 
   const result = await supabase
@@ -130,7 +125,6 @@ alert(JSON.stringify(data))
       {
         name: recipeName,
         ingredients,
-        category,
         user_id: session.user.id
       }
     ])
@@ -145,13 +139,16 @@ alert(JSON.stringify(data))
       return
     }
 
-    await getRecipes()
+    const savedRecipe = {
+      id: data[0].id,
+      name: data[0].name,
+      ingredients: data[0].ingredients.split(",").map((item) => item.trim())
+    }
 
-setRecipeName("")
-setIngredients("")
-setEditingRecipeId(null)
-setCategory("Dinner")
-window.location.reload()
+    setRecipes([...recipes, savedRecipe])
+    setRecipeName("")
+    setIngredients("")
+    setEditingRecipeId(null)
   }
 
   async function deleteRecipe(id) {
@@ -365,16 +362,6 @@ function createShoppingList(meals) {
             value={recipeName}
             onChange={(e) => setRecipeName(e.target.value)}
           />
-          <select
-  value={category}
-  onChange={(e) => setCategory(e.target.value)}
->
-  <option>Dinner</option>
-  <option>Breakfast</option>
-  <option>Lunch</option>
-  <option>Dessert</option>
-  <option>Snack</option>
-</select>
    
 
           <input
@@ -385,7 +372,7 @@ function createShoppingList(meals) {
           />
 
           <button className="primary-button" onClick={addRecipe}>
-            {editingRecipeId ? "Save Changes" : "Add Recipe"}
+            Add Recipe
           </button>
         </div>
       </section>
@@ -399,24 +386,13 @@ function createShoppingList(meals) {
       <main className="grid">
         <section className="card">
           <h2>📖 Your Recipes</h2>
-          <input
-  type="text"
-  placeholder="Search recipes..."
-  value={searchTerm}
-  onChange={(e) => setSearchTerm(e.target.value)}
-/>
 
           {recipes.length === 0 && <p className="empty">No recipes yet.</p>}
            
-          {recipes
-  .filter((recipe) =>
-    recipe.name.toLowerCase().includes(searchTerm.toLowerCase())
-  )
-  .map((recipe) => (
+          {recipes.map((recipe) => (
             <div className="recipe-card" key={recipe.id}>
     <div>
   <strong>{recipe.name}</strong>
-  <p className="category-pill">{recipe.category || "Dinner"}</p>
   <p>{recipe.ingredients.join(", ")}</p>
 </div>
 
@@ -425,7 +401,6 @@ function createShoppingList(meals) {
   <button
     className="small-button"
     onClick={() => {
-      alert("Editing ID: " + recipe.id)
       setRecipeName(recipe.name)
       setIngredients(recipe.ingredients.join(", "))
       setEditingRecipeId(recipe.id)
