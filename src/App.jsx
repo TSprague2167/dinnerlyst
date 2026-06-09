@@ -53,6 +53,7 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
 
     if (error) {
       alert(error.message)
+      console.log(error)
       return
     }
 
@@ -110,12 +111,14 @@ if (editingRecipeId) {
       name: recipeName,
       ingredients
     })
-    .eq('id', editingRecipeId)
-    .select()
+    .eq('id', (editingRecipeId))
+
+    .select("*")
+    alert(JSON.stringify(result))
 
   data = result.data
   error = result.error
-
+alert(JSON.stringify(data))
 } else {
 
   const result = await supabase
@@ -138,15 +141,12 @@ if (editingRecipeId) {
       return
     }
 
-    const savedRecipe = {
-      id: data[0].id,
-      name: data[0].name,
-      ingredients: data[0].ingredients.split(",").map((item) => item.trim())
-    }
+    await getRecipes()
 
-    setRecipes([...recipes, savedRecipe])
-    setRecipeName("")
-    setIngredients("")
+setRecipeName("")
+setIngredients("")
+setEditingRecipeId(null)
+window.location.reload()
   }
 
   async function deleteRecipe(id) {
@@ -370,7 +370,7 @@ function createShoppingList(meals) {
           />
 
           <button className="primary-button" onClick={addRecipe}>
-            Add Recipe
+            {editingRecipeId ? "Save Changes" : "Add Recipe"}
           </button>
         </div>
       </section>
@@ -399,6 +399,7 @@ function createShoppingList(meals) {
   <button
     className="small-button"
     onClick={() => {
+      alert("Editing ID: " + recipe.id)
       setRecipeName(recipe.name)
       setIngredients(recipe.ingredients.join(", "))
       setEditingRecipeId(recipe.id)
