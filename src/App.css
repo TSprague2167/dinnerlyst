@@ -201,3 +201,37 @@ button:hover {
   color: #7C4A35;
   margin: 0;
 }
+.category-pill {
+  display: inline-block;
+  background: #fff8f2;
+  border: 1px solid #e7ddd5;
+  color: #7c4a35;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 13px;
+  margin: 6px 0;
+}
+select {
+  background: #F7F3EF;
+  border: 2px solid #E7DDD5;
+  border-radius: 16px;
+  padding: 12px 16px;
+  color: #333;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+select:focus {
+  outline: none;
+  border-color: #FF7A59;
+}
+.category-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: 8px;
+  background: #FFE8D6;
+  color: #A0522D;
+}

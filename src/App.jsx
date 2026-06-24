@@ -17,6 +17,7 @@ function App() {
   const [searchTerm, setSearchTerm] = useState("")
   const [category, setCategory] = useState("Dinner")
   const [shoppingList, setShoppingList] = useState([])
+  const [selectedCategory, setSelectedCategory] = useState("All")
 
   const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 const [editingRecipeId, setEditingRecipeId] = useState(null)
@@ -203,6 +204,7 @@ function toggleDayLock(day) {
   console.log("dayToChange:", dayToChange)
  console.log("lockedDays:", lockedDays) 
   if (recipes.length === 0) return
+  
 
   if (lockedDays.includes(dayToChange)) {
     return
@@ -398,19 +400,33 @@ function createShoppingList(meals) {
 
       <main className="grid">
         <section className="card">
-          <h2>📖 Your Recipes</h2>
+          <h2>📖 Your Recipes ({recipes.length})</h2>
           <input
   type="text"
   placeholder="Search recipes..."
   value={searchTerm}
   onChange={(e) => setSearchTerm(e.target.value)}
 />
-
+<select
+  value={selectedCategory}
+  onChange={(e) => setSelectedCategory(e.target.value)}
+>
+  <option value="All">All Categories</option>
+  <option value="Dinner">Dinner</option>
+  <option value="Breakfast">Breakfast</option>
+  <option value="Lunch">Lunch</option>
+  <option value="Dessert">Dessert</option>
+  <option value="Snack">Snack</option>
+</select>
           {recipes.length === 0 && <p className="empty">No recipes yet.</p>}
            
-          {recipes
-  .filter((recipe) =>
+         {recipes
+  .filter(recipe =>
     recipe.name.toLowerCase().includes(searchTerm.toLowerCase())
+  )
+  .filter(recipe =>
+    selectedCategory === "All" ||
+    recipe.category === selectedCategory
   )
   .map((recipe) => (
             <div className="recipe-card" key={recipe.id}>
