@@ -9,6 +9,7 @@ function App() {
   const [recipes, setRecipes] = useState([])
   const [recipeName, setRecipeName] = useState("")
   const [ingredients, setIngredients] = useState("")
+  const [imageUrl, setImageUrl] = useState("")
   const [weeklyMeals, setWeeklyMeals] = useState(() => {
   const savedMeals = localStorage.getItem("weeklyMeals")
   return savedMeals ? JSON.parse(savedMeals) : []
@@ -94,10 +95,12 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
     }
 
     const savedRecipes = data.map((recipe) => ({
-      id: recipe.id,
-      name: recipe.name,
-      ingredients: recipe.ingredients.split(",").map((item) => item.trim())
-    }))
+  id: recipe.id,
+  name: recipe.name,
+  category: recipe.category || "Dinner",
+  image_url: recipe.image_url || "",
+  ingredients: recipe.ingredients.split(",").map((item) => item.trim())
+}))
 
     setRecipes(savedRecipes)
   }
@@ -114,15 +117,16 @@ if (editingRecipeId) {
       name: recipeName,
       ingredients,
       category,
+      image_url: imageUrl,
     })
     .eq('id', (editingRecipeId))
 
     .select("*")
-    alert(JSON.stringify(result))
+    
 
   data = result.data
   error = result.error
-alert(JSON.stringify(data))
+
 } else {
 
   const result = await supabase
@@ -132,6 +136,7 @@ alert(JSON.stringify(data))
         name: recipeName,
         ingredients,
         category,
+        image_url: imageUrl,
         user_id: session.user.id
       }
     ])
@@ -150,8 +155,10 @@ alert(JSON.stringify(data))
 
 setRecipeName("")
 setIngredients("")
+setIngredients(recipe.ingredients.join(", "))
 setEditingRecipeId(null)
 setCategory("Dinner")
+setImageUrl("")
 window.location.reload()
   }
 
@@ -367,6 +374,12 @@ function createShoppingList(meals) {
             value={recipeName}
             onChange={(e) => setRecipeName(e.target.value)}
           />
+          <input
+  type="text"
+  placeholder="Recipe Photo URL"
+  value={imageUrl}
+  onChange={(e) => setImageUrl(e.target.value)}
+/>
           <select
   value={category}
   onChange={(e) => setCategory(e.target.value)}
@@ -421,45 +434,63 @@ function createShoppingList(meals) {
           {recipes.length === 0 && <p className="empty">No recipes yet.</p>}
            
          {recipes
-  .filter(recipe =>
+  .filter((recipe) =>
     recipe.name.toLowerCase().includes(searchTerm.toLowerCase())
   )
-  .filter(recipe =>
+  .filter((recipe) =>
     selectedCategory === "All" ||
-    recipe.category === selectedCategory
+    (recipe.category || "Dinner") === selectedCategory
   )
-  .map((recipe) => (
-            <div className="recipe-card" key={recipe.id}>
-    <div>
-  <strong>{recipe.name}</strong>
-  <p className="category-pill">{recipe.category || "Dinner"}</p>
-  <p>{recipe.ingredients.join(", ")}</p>
-</div>
+  .length === 0 ? (
+    <p className="empty">
+      No recipes found. Try another search or category.
+    </p>
+  ) : (
+    recipes
+      .filter((recipe) =>
+        recipe.name.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+      .filter((recipe) =>
+        selectedCategory === "All" ||
+        (recipe.category || "Dinner") === selectedCategory
+      )
+      .map((recipe) => (
+        <div className="recipe-card" key={recipe.id}>
+          {recipe.image_url && (
+  <img
+    src={recipe.image_url}
+    alt={recipe.name}
+    className="recipe-image"
+  />
+)}
+          <div>
+            <strong>{recipe.name}</strong>
+            <p className="category-pill">{recipe.category || "Dinner"}</p>
+            <p>{recipe.ingredients.join(", ")}</p>
+          </div>
 
-<div>
+          <div>
+            <button
+              className="small-button"
+              onClick={() => {
+                setRecipeName(recipe.name)
+                setIngredients(recipe.ingredients.join(", "))
+                setEditingRecipeId(recipe.id)
+              }}
+            >
+              ✏️ Edit
+            </button>
 
-  <button
-    className="small-button"
-    onClick={() => {
-      alert("Editing ID: " + recipe.id)
-      setRecipeName(recipe.name)
-      setIngredients(recipe.ingredients.join(", "))
-      setEditingRecipeId(recipe.id)
-    }}
-  >
-    ✏️ Edit
-  </button>
-
-  <button
-    className="delete-button"
-    onClick={() => deleteRecipe(recipe.id)}
-  >
-    Delete
-  </button>
-
-</div>
-            </div>
-          ))}
+            <button
+              className="delete-button"
+              onClick={() => deleteRecipe(recipe.id)}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      ))
+  )}
         </section>
 
         <section className="card">

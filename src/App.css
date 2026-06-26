@@ -235,3 +235,10 @@ select:focus {
   background: #FFE8D6;
   color: #A0522D;
 }
+.recipe-image {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  border-radius: 16px;
+  margin-bottom: 12px;
+}
