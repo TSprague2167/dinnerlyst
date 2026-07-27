@@ -19,6 +19,7 @@ function App() {
   const [category, setCategory] = useState("Dinner")
   const [shoppingList, setShoppingList] = useState([])
   const [selectedCategory, setSelectedCategory] = useState("All")
+  const [imageFile, setImageFile] = useState(null)
 
   const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 const [editingRecipeId, setEditingRecipeId] = useState(null)
@@ -104,10 +105,35 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
 
     setRecipes(savedRecipes)
   }
+async function uploadRecipeImage(file) {
+  if (!file) return ""
 
+  const fileName = `${Date.now()}-${file.name}`
+
+  const { error } = await supabase.storage
+    .from("recipe-images")
+    .upload(fileName, file)
+
+  if (error) {
+    alert(error.message)
+    console.log(error)
+    return ""
+  }
+
+  const { data } = supabase.storage
+    .from("recipe-images")
+    .getPublicUrl(fileName)
+
+  return data.publicUrl
+}
   async function addRecipe() {
     if (recipeName.trim() === "" || ingredients.trim() === "") return
+ 
+    let uploadedImageUrl = imageUrl
 
+if (imageFile) {
+  uploadedImageUrl = await uploadRecipeImage(imageFile)
+}
     let data, error
 
 if (editingRecipeId) {
@@ -117,7 +143,7 @@ if (editingRecipeId) {
       name: recipeName,
       ingredients,
       category,
-      image_url: imageUrl,
+      image_url: uploadedImageUrl,
     })
     .eq('id', (editingRecipeId))
 
@@ -136,7 +162,7 @@ if (editingRecipeId) {
         name: recipeName,
         ingredients,
         category,
-        image_url: imageUrl,
+        image_url: uploadedImageUrl,
         user_id: session.user.id
       }
     ])
@@ -159,6 +185,7 @@ setIngredients(recipe.ingredients.join(", "))
 setEditingRecipeId(null)
 setCategory("Dinner")
 setImageUrl("")
+setImageFile(null)
 window.location.reload()
   }
 
@@ -375,10 +402,9 @@ function createShoppingList(meals) {
             onChange={(e) => setRecipeName(e.target.value)}
           />
           <input
-  type="text"
-  placeholder="Recipe Photo URL"
-  value={imageUrl}
-  onChange={(e) => setImageUrl(e.target.value)}
+  type="file"
+  accept="image/*"
+  onChange={(e) => setImageFile(e.target.files[0])}
 />
           <select
   value={category}
