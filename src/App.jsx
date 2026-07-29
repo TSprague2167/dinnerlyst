@@ -20,6 +20,7 @@ function App() {
   const [shoppingList, setShoppingList] = useState([])
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [imageFile, setImageFile] = useState(null)
+  const [selectedCategories, setSelectedCategories] = useState([])
 
   const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 const [editingRecipeId, setEditingRecipeId] = useState(null)
