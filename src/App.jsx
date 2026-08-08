@@ -99,7 +99,7 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
     const savedRecipes = data.map((recipe) => ({
   id: recipe.id,
   name: recipe.name,
-  category: recipe.category || "Dinner",
+  categories: recipe.categories || [],
   image_url: recipe.image_url || "",
   ingredients: recipe.ingredients.split(",").map((item) => item.trim())
 }))
@@ -128,13 +128,19 @@ async function uploadRecipeImage(file) {
   return data.publicUrl
 }
   async function addRecipe() {
-    if (recipeName.trim() === "" || ingredients.trim() === "") return
+    
+
+   if (recipeName.trim() === "" || ingredients.trim() === "") {
+  alert("Please enter both a recipe name and ingredients.")
+  return
+}
  
     let uploadedImageUrl = imageUrl
 
 if (imageFile) {
   uploadedImageUrl = await uploadRecipeImage(imageFile)
 }
+
     let data, error
 
 if (editingRecipeId) {
@@ -143,7 +149,7 @@ if (editingRecipeId) {
     .update({
       name: recipeName,
       ingredients,
-      category,
+      categories: selectedCategories,
       image_url: uploadedImageUrl,
     })
     .eq('id', (editingRecipeId))
@@ -162,7 +168,7 @@ if (editingRecipeId) {
       {
         name: recipeName,
         ingredients,
-        category,
+        categories: selectedCategories,
         image_url: uploadedImageUrl,
         user_id: session.user.id
       }
@@ -175,14 +181,15 @@ if (editingRecipeId) {
 
     if (error) {
       console.log(error)
+      alert(error.message)
       return
     }
 
     await getRecipes()
 
 setRecipeName("")
+setSelectedCategories([])
 setIngredients("")
-setIngredients(recipe.ingredients.join(", "))
 setEditingRecipeId(null)
 setCategory("Dinner")
 setImageUrl("")
@@ -407,16 +414,47 @@ function createShoppingList(meals) {
   accept="image/*"
   onChange={(e) => setImageFile(e.target.files[0])}
 />
-          <select
-  value={category}
-  onChange={(e) => setCategory(e.target.value)}
->
-  <option>Dinner</option>
-  <option>Breakfast</option>
-  <option>Lunch</option>
-  <option>Dessert</option>
-  <option>Snack</option>
-</select>
+          
+      <div>
+  <strong>Categories</strong>
+
+  {[
+    "Chicken",
+    "Beef",
+    "Pork",
+    "Seafood",
+    "Pasta",
+    "Crockpot",
+    "Breakfast",
+    "Vegetarian",
+    "Soup",
+    "Dessert",
+  ].map((cat) => (
+    <label
+      key={cat}
+      style={{
+        display: "inline-block",
+        marginRight: "12px",
+        marginTop: "8px",
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={selectedCategories.includes(cat)}
+        onChange={(e) => {
+          if (e.target.checked) {
+            setSelectedCategories([...selectedCategories, cat])
+          } else {
+            setSelectedCategories(
+              selectedCategories.filter((item) => item !== cat)
+            )
+          }
+        }}
+      />
+      {" "}{cat}
+    </label>
+  ))}
+</div> 
    
 
           <input
@@ -492,7 +530,13 @@ function createShoppingList(meals) {
 )}
           <div>
             <strong>{recipe.name}</strong>
-            <p className="category-pill">{recipe.category || "Dinner"}</p>
+            <div>
+  {(recipe.categories || []).map((cat) => (
+    <span className="category-pill" key={cat}>
+      {cat}
+    </span>
+  ))}
+</div>
             <p>{recipe.ingredients.join(", ")}</p>
           </div>
 
