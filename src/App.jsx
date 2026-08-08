@@ -489,12 +489,17 @@ function createShoppingList(meals) {
   value={selectedCategory}
   onChange={(e) => setSelectedCategory(e.target.value)}
 >
-  <option value="All">All Categories</option>
-  <option value="Dinner">Dinner</option>
-  <option value="Breakfast">Breakfast</option>
-  <option value="Lunch">Lunch</option>
-  <option value="Dessert">Dessert</option>
-  <option value="Snack">Snack</option>
+<option value="All">All Categories</option>
+<option value="Chicken">Chicken</option>
+<option value="Beef">Beef</option>
+<option value="Pork">Pork</option>
+<option value="Seafood">Seafood</option>
+<option value="Pasta">Pasta</option>
+<option value="Crockpot">Crockpot</option>
+<option value="Breakfast">Breakfast</option>
+<option value="Vegetarian">Vegetarian</option>
+<option value="Soup">Soup</option>
+<option value="Dessert">Dessert</option>
 </select>
           {recipes.length === 0 && <p className="empty">No recipes yet.</p>}
            
@@ -504,7 +509,7 @@ function createShoppingList(meals) {
   )
   .filter((recipe) =>
     selectedCategory === "All" ||
-    (recipe.category || "Dinner") === selectedCategory
+    (recipe.categories || []).includes(selectedCategory)
   )
   .length === 0 ? (
     <p className="empty">
@@ -517,7 +522,7 @@ function createShoppingList(meals) {
       )
       .filter((recipe) =>
         selectedCategory === "All" ||
-        (recipe.category || "Dinner") === selectedCategory
+        (recipe.categories || []).includes(selectedCategory)
       )
       .map((recipe) => (
         <div className="recipe-card" key={recipe.id}>
