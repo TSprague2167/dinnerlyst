@@ -10,12 +10,15 @@ function App() {
   const [recipeName, setRecipeName] = useState("")
   const [ingredients, setIngredients] = useState("")
   const [imageUrl, setImageUrl] = useState("")
+  const [pantryItems, setPantryItems] = useState([])
   const [weeklyMeals, setWeeklyMeals] = useState(() => {
   const savedMeals = localStorage.getItem("weeklyMeals")
   return savedMeals ? JSON.parse(savedMeals) : []
 })
   const [lockedDays, setLockedDays] = useState([])
   const [searchTerm, setSearchTerm] = useState("")
+  const [pantrySearch, setPantrySearch] = useState("")
+  const [activeTab, setActiveTab] = useState("planner")
   const [category, setCategory] = useState("Dinner")
   const [shoppingList, setShoppingList] = useState([])
   const [selectedCategory, setSelectedCategory] = useState("All")
@@ -268,6 +271,32 @@ function toggleDayLock(day) {
   setWeeklyMeals(updatedMeals)
   createShoppingList(updatedMeals)
 }
+function cookTonight(recipe) {
+  if (!recipe) return
+
+  const today = new Date().toLocaleDateString("en-US", {
+    weekday: "long"
+  })
+
+  const todayExists = weeklyMeals.some((item) => item.day === today)
+
+  if (!todayExists) {
+    alert("Generate your weekly plan first.")
+    return
+  }
+
+  const updatedMeals = weeklyMeals.map((item) =>
+    item.day === today
+      ? {
+          ...item,
+          meal: recipe
+        }
+      : item
+  )
+
+  setWeeklyMeals(updatedMeals)
+  createShoppingList(updatedMeals)
+}
 function createShoppingList(meals) {
   const allIngredients = meals.flatMap((item) => item.meal.ingredients)
 
@@ -343,7 +372,48 @@ function createShoppingList(meals) {
 
   setShoppingList(categories)
 }
+const pantryMatches = recipes
+  .map((recipe) => {
+    const matchedIngredients = recipe.ingredients.filter((ingredient) =>
+      pantryItems.some((item) =>
+        ingredient.toLowerCase().includes(item.toLowerCase())
+      )
+    )
 
+    return {
+      ...recipe,
+      matchedCount: matchedIngredients.length,
+      totalCount: recipe.ingredients.length,
+      matchPercentage: Math.round(
+        (matchedIngredients.length / recipe.ingredients.length) * 100
+      ),
+      missingIngredients: recipe.ingredients.filter(
+        (ingredient) =>
+          !pantryItems.some((item) =>
+            ingredient.toLowerCase().includes(item.toLowerCase())
+          )
+      )
+    }
+  })
+  .filter((recipe) => recipe.matchedCount > 0)
+  .sort((a, b) => b.matchPercentage - a.matchPercentage)
+  const addMissingToShoppingList = (missingIngredients) => {
+  setShoppingList((currentList) => {
+    const updatedList = { ...currentList }
+
+    if (!updatedList.Other) {
+      updatedList.Other = []
+    }
+
+    missingIngredients.forEach((ingredient) => {
+      if (!updatedList.Other.includes(ingredient)) {
+        updatedList.Other.push(ingredient)
+      }
+    })
+
+    return updatedList
+  })
+}
   if (!session) {
     return (
       <div className="app">
@@ -351,6 +421,8 @@ function createShoppingList(meals) {
           <h1>Dinnerlyst</h1>
           <p>Log in or create an account to save your recipes.</p>
         </header>
+       
+        
 
         <section className="card auth-card">
           <h2>Account</h2>
@@ -398,6 +470,23 @@ function createShoppingList(meals) {
           Log Out
         </button>
       </header>
+       <nav className="tab-nav">
+  <button onClick={() => setActiveTab("planner")}>
+    🍽️ Meal Planner
+  </button>
+
+  <button onClick={() => setActiveTab("recipes")}>
+    📖 Recipes
+  </button>
+
+  <button onClick={() => setActiveTab("shopping")}>
+    🛒 Shopping List
+  </button>
+
+  <button onClick={() => setActiveTab("pantry")}>
+    🥫 Pantry
+  </button>
+</nav>
 
       <section className="card">
         <h2>Add a Recipe</h2>
@@ -477,6 +566,7 @@ function createShoppingList(meals) {
       </section>
 
       <main className="grid">
+      {activeTab === "recipes" && (
         <section className="card">
           <h2>📖 Your Recipes ({recipes.length})</h2>
           <input
@@ -568,29 +658,105 @@ function createShoppingList(meals) {
       ))
   )}
         </section>
+        )}
+        
 
-        <section className="card">
-          <h2>🍽️Weekly Meal Plan</h2>
+        {activeTab === "planner" && (
+<section className="card">
+<div className="planner-welcome">
+  <p className="planner-eyebrow">Good Evening 👋</p>
+  <h2>What’s for dinner tonight?</h2>
+  <p>Let Dinnerlyst help you make the easiest choice.</p>
+</div>
+<div className="best-match-card">
+  <p className="best-match-label">⭐ Tonight's Best Match</p>
+
+  <h3>
+  {pantryMatches[0]?.name || "Add pantry items to get a recommendation"}
+</h3>
+
+  <div className="progress-bar">
+    <div
+  className="progress-fill"
+  style={{
+    width: `${pantryMatches[0]?.matchPercentage || 0}%`
+  }}
+></div>
+  </div>
+
+  <p className="progress-text">
+  {pantryMatches[0]
+    ? pantryMatches[0].matchPercentage === 100
+      ? "🎉 100% Ready — You can make this!"
+      : `${pantryMatches[0].matchPercentage}% Ready`
+    : "No match yet"}
+</p>
+
+  {pantryMatches[0]?.missingIngredients?.length > 0 && (
+  <p className="missing-title">Only missing:</p>
+)}
+
+  {pantryMatches[0]?.missingIngredients?.length > 0 ? (
+  <div>
+    {pantryMatches[0].missingIngredients.map((ingredient) => (
+      <p key={ingredient}>• {ingredient}</p>
+    ))}
+  </div>
+) : (
+  <p>✅ You have everything you need!</p>
+)}
+  {pantryMatches[0]?.missingIngredients?.length > 0 && (
+  <button
+    className="cook-button"
+    onClick={() =>
+      addMissingToShoppingList(pantryMatches[0].missingIngredients)
+    }
+  >
+    🛒 Add Missing to Shopping List
+  </button>
+)}
+
+<button
+  className="cook-button"
+  onClick={() => cookTonight(pantryMatches[0])}
+>
+  Cook Tonight
+</button>
+</div>
+  <div className="section-header">
+  <h2>This Week</h2>
+  <p>Your planned meals at a glance.</p>
+</div>
 
           {weeklyMeals.length === 0 && <p className="empty">Generate meals to see your week.</p>}
+          <div className="meal-grid">
 
           {weeklyMeals.map((item, index) => (
             <div className="meal-card" key={index}>
-              <div>
-                <strong>{item.day}</strong>
-                <p>{item.meal.name}</p>
-              </div>
+  <div className="meal-info">
+    <span className="meal-day">{item.day}</span>
+    <h3>{item.meal.name}</h3>
+  </div>
 
-              <button className="small-button" onClick={() => regenerateMeal(item.day)}>
-                🔄 Regenerate
-              </button>
-              <button className="small-button" onClick={() => toggleDayLock(item.day)}>
-  {lockedDays.includes(item.day) ? "Unlock" : "Lock"}
-</button>
-            </div>
+  <div className="meal-actions">
+    <button className="small-button" onClick={() => regenerateMeal(item.day)}>
+      🔄 Regenerate
+    </button>
+
+    <button
+      className="small-button"
+      onClick={() => toggleLock(item.day)}
+    >
+      {lockedDays.includes(item.day) ? "Unlock" : "Lock"}
+    </button>
+  </div>
+</div>
           ))}
+          </div>
         </section>
-
+        )}
+        
+        {activeTab === "shopping" && (
         <section className="card">
           <h2>🛒Shopping List</h2>
 
@@ -613,6 +779,112 @@ function createShoppingList(meals) {
   )
 ))}
         </section>
+        )}
+        {activeTab === "pantry" && (
+  <section className="card">
+    <h2>🥫 Pantry</h2>
+ <input
+  type="text"
+  placeholder="Search ingredients..."
+  value={pantrySearch}
+  onChange={(e) => setPantrySearch(e.target.value)}
+/>
+{[
+  "Chicken",
+  "Rice",
+  "Eggs",
+  "Cheese",
+  "Milk",
+  "Butter",
+  "Pasta",
+  "Tortillas",
+  "Onion",
+  "Tomato",
+].filter((item) =>
+  item.toLowerCase().includes(pantrySearch.toLowerCase())
+).map((item) => (
+  <button
+    key={item}
+    onClick={() => {
+      if (!pantryItems.includes(item)) {
+        setPantryItems([...pantryItems, item])
+      }
+      setPantrySearch("")
+    }}
+  >
+    {item}
+  </button>
+))}
+    <h3>Your Pantry</h3>
+   <h3>Recipe Matches</h3>
+
+{recipes
+  .map((recipe) => {
+    const matchedIngredients = recipe.ingredients.filter((ingredient) =>
+      pantryItems.some((item) =>
+        ingredient.toLowerCase().includes(item.toLowerCase())
+      )
+    )
+
+   return {
+  ...recipe,
+  matchedCount: matchedIngredients.length,
+  totalCount: recipe.ingredients.length,
+  matchPercentage:
+  Math.round(
+    (matchedIngredients.length / recipe.ingredients.length) * 100
+  ),
+  missingIngredients: recipe.ingredients.filter(
+    (ingredient) =>
+      !pantryItems.some((item) =>
+        ingredient.toLowerCase().includes(item.toLowerCase())
+      )
+  )
+}
+  })
+  .filter((recipe) => recipe.matchedCount > 0)
+  .sort((a, b) => b.matchedCount - a.matchedCount)
+  .map((recipe) => (
+    <div key={recipe.id} className="recipe-card">
+      <strong>{recipe.name}</strong>
+      <p>
+  ✅ {recipe.matchedCount} of {recipe.totalCount} ingredients available
+</p>
+
+{recipe.missingIngredients.length > 0 && (
+  <>
+    <small><strong>Missing:</strong></small>
+
+    <ul>
+      {recipe.missingIngredients.map((ingredient) => (
+        <li key={ingredient}>{ingredient}</li>
+      ))}
+    </ul>
+  </>
+)}
+    </div>
+  ))}
+
+{pantryItems.length === 0 ? (
+  <p>No pantry items yet.</p>
+) : (
+  pantryItems.map((item) => (
+  <span key={item} className="category-pill">
+    {item}
+    <button
+      onClick={() =>
+        setPantryItems(
+          pantryItems.filter((pantryItem) => pantryItem !== item)
+        )
+      }
+    >
+      ✕
+    </button>
+  </span>
+))
+)}
+  </section>
+)}
       </main>
     </div>
   )
