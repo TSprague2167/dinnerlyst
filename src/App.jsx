@@ -744,7 +744,7 @@ const pantryMatches = recipes
 </button>
 </div>
   <div className="section-header">
-  <h2>This Week</h2>
+  <h2>This Week TEST</h2>
   <p>Your planned meals at a glance.</p>
 </div>
 
@@ -775,6 +775,38 @@ const pantryMatches = recipes
           </div>
         </section>
         )}
+        {activeTab === "planner" && (
+  <section className="card shopping-progress-card">
+    <h2>🛒 Shopping Progress</h2>
+
+    <p>
+      {checkedShoppingItems.length} of{" "}
+      {Object.values(shoppingList).flat().length} items checked
+    </p>
+
+    <div className="progress-track">
+      <div
+        className="progress-fill"
+        style={{
+          width: `${
+            Object.values(shoppingList).flat().length > 0
+              ? (checkedShoppingItems.length /
+                  Object.values(shoppingList).flat().length) *
+                100
+              : 0
+          }%`,
+        }}
+      />
+    </div>
+
+    <button
+      className="small-button"
+      onClick={() => setActiveTab("shopping")}
+    >
+      View Shopping List
+    </button>
+  </section>
+)}
         
         {activeTab === "shopping" && (
         <section className="card">
