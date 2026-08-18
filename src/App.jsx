@@ -744,7 +744,7 @@ const pantryMatches = recipes
 </button>
 </div>
   <div className="section-header">
-  <h2>This Week TEST</h2>
+  <h2>This Week</h2>
   <p>Your planned meals at a glance.</p>
 </div>
 
