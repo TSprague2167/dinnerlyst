@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { supabase } from './supabase'
 import './App.css'
 
+
 function App() {
   const [session, setSession] = useState(null)
   const [authEmail, setAuthEmail] = useState("")
@@ -20,7 +21,26 @@ function App() {
   const [pantrySearch, setPantrySearch] = useState("")
   const [activeTab, setActiveTab] = useState("planner")
   const [category, setCategory] = useState("Dinner")
-  const [shoppingList, setShoppingList] = useState([])
+  const [shoppingList, setShoppingList] = useState(() => {
+  const saved = localStorage.getItem("shoppingList")
+  return saved ? JSON.parse(saved) : []
+})
+  const [checkedShoppingItems, setCheckedShoppingItems] = useState(() => {
+  const saved = localStorage.getItem("checkedShoppingItems")
+  return saved ? JSON.parse(saved) : []
+})
+useEffect(() => {
+  localStorage.setItem(
+    "checkedShoppingItems",
+    JSON.stringify(checkedShoppingItems)
+  )
+}, [checkedShoppingItems])
+useEffect(() => {
+  localStorage.setItem(
+    "shoppingList",
+    JSON.stringify(shoppingList)
+  )
+}, [shoppingList])
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [imageFile, setImageFile] = useState(null)
   const [selectedCategories, setSelectedCategories] = useState([])
@@ -759,6 +779,7 @@ const pantryMatches = recipes
         {activeTab === "shopping" && (
         <section className="card">
           <h2>🛒Shopping List</h2>
+          <p>Checked items: {checkedShoppingItems.length}</p>
 
           {shoppingList.length === 0 && <p className="empty">Your grocery list will appear here.</p>}
 
@@ -770,7 +791,22 @@ const pantryMatches = recipes
       {items.map((ingredient, index) => (
         <div className="shopping-item" key={index}>
          <>
-  <input type="checkbox" />
+  <input
+  type="checkbox"
+  checked={checkedShoppingItems.includes(ingredient)}
+  onChange={(e) => {
+    if (e.target.checked) {
+      setCheckedShoppingItems([
+        ...checkedShoppingItems,
+        ingredient
+      ])
+    } else {
+      setCheckedShoppingItems(
+        checkedShoppingItems.filter((item) => item !== ingredient)
+      )
+    }
+  }}
+/>
   {ingredient}
 </> 
         </div>
