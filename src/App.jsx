@@ -10,6 +10,7 @@ function App() {
   const [recipes, setRecipes] = useState([])
   const [recipeName, setRecipeName] = useState("")
   const [ingredients, setIngredients] = useState("")
+  const [instructions, setInstructions] = useState("")
   const [imageUrl, setImageUrl] = useState("")
   const [pantryItems, setPantryItems] = useState([])
   const [weeklyMeals, setWeeklyMeals] = useState(() => {
@@ -17,6 +18,7 @@ function App() {
   return savedMeals ? JSON.parse(savedMeals) : []
 })
   const [lockedDays, setLockedDays] = useState([])
+  const [recipeUrl, setRecipeUrl] = useState("");
   const [searchTerm, setSearchTerm] = useState("")
   const [pantrySearch, setPantrySearch] = useState("")
   const [activeTab, setActiveTab] = useState("planner")
@@ -124,6 +126,7 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
   name: recipe.name,
   categories: recipe.categories || [],
   image_url: recipe.image_url || "",
+  instructions: recipe.instructions || "",
   ingredients: recipe.ingredients.split(",").map((item) => item.trim())
 }))
 
@@ -150,6 +153,44 @@ async function uploadRecipeImage(file) {
 
   return data.publicUrl
 }
+async function importRecipeFromUrl() {
+  if (!recipeUrl.trim()) {
+    alert("Paste a recipe URL first.")
+    return
+  }
+
+  const { data, error } = await supabase.functions.invoke("import-recipe", {
+    body: { url: recipeUrl }
+  })
+
+  if (error) {
+    console.error(error)
+    alert("Could not import that recipe.")
+    return
+  }
+
+  setRecipeName(data.name || "")
+  setIngredients(
+  Array.isArray(data.ingredients)
+    ? data.ingredients
+        .map((ingredient) =>
+          ingredient
+            .replace(/\s*\(\s*,\s*/g, ", ")
+            .replace(/\s*\)\s*$/g, "")
+        )
+        .join(", ")
+    : ""
+)
+  setInstructions(
+  Array.isArray(data.instructions)
+    ? data.instructions.join("\n\n")
+    : ""
+)
+
+  if (data.image) {
+    setImageUrl(data.image)
+  }
+}
   async function addRecipe() {
     
 
@@ -172,6 +213,7 @@ if (editingRecipeId) {
     .update({
       name: recipeName,
       ingredients,
+      instructions,
       categories: selectedCategories,
       image_url: uploadedImageUrl,
     })
@@ -191,6 +233,7 @@ if (editingRecipeId) {
       {
         name: recipeName,
         ingredients,
+        instructions,
         categories: selectedCategories,
         image_url: uploadedImageUrl,
         user_id: session.user.id
@@ -512,6 +555,20 @@ const pantryMatches = recipes
         <h2>Add a Recipe</h2>
 
         <div className="form">
+        <div className="recipe-import">
+  <input
+    type="url"
+    placeholder="Paste recipe URL"
+    value={recipeUrl}
+    onChange={(e) => setRecipeUrl(e.target.value)}
+  />
+ <button
+  type="button"
+  onClick={importRecipeFromUrl}
+>
+  Import Recipe
+</button>
+</div>
           <input
             type="text"
             placeholder="Recipe name"
@@ -572,6 +629,12 @@ const pantryMatches = recipes
             value={ingredients}
             onChange={(e) => setIngredients(e.target.value)}
           />
+          <textarea
+  placeholder="Recipe instructions"
+  value={instructions}
+  onChange={(e) => setInstructions(e.target.value)}
+  rows="6"
+/>
 
           <button className="primary-button" onClick={addRecipe}>
             {editingRecipeId ? "Save Changes" : "Add Recipe"}
@@ -661,6 +724,7 @@ const pantryMatches = recipes
               onClick={() => {
                 setRecipeName(recipe.name)
                 setIngredients(recipe.ingredients.join(", "))
+                setInstructions(recipe.instructions || "")
                 setEditingRecipeId(recipe.id)
               }}
             >
