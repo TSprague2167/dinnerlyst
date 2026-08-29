@@ -786,9 +786,19 @@ const pantryMatches = recipes
       <h3>Instructions</h3>
     </div>
 
-    <div className="recipe-instructions">
-      {recipe.instructions || "No instructions saved."}
-    </div>
+   <div className="recipe-instructions">
+  {recipe.instructions
+    ? recipe.instructions
+        .split(/\n\s*\n/)
+        .filter((step) => step.trim())
+        .map((step, index) => (
+          <div className="instruction-step" key={index}>
+            <span className="step-number">{index + 1}</span>
+            <p>{step.trim()}</p>
+          </div>
+        ))
+    : "No instructions saved."}
+</div>
   </div>
 )}
           </div>
