@@ -128,7 +128,42 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
   categories: recipe.categories || [],
   image_url: recipe.image_url || "",
   instructions: recipe.instructions || "",
-  ingredients: recipe.ingredients.split(",").map((item) => item.trim())
+ ingredients: (() => {
+  const parts = recipe.ingredients
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+  const modifiers = [
+    "diced",
+    "chopped",
+    "minced",
+    "sliced",
+    "cubed",
+    "shredded",
+    "divided",
+    "to taste",
+    "bone-in",
+    "boneless",
+    "peeled",
+    "crushed",
+  ]
+
+  const combined = []
+
+  parts.forEach((part) => {
+    if (
+      modifiers.includes(part.toLowerCase()) &&
+      combined.length > 0
+    ) {
+      combined[combined.length - 1] += `, ${part}`
+    } else {
+      combined.push(part)
+    }
+  })
+
+  return combined
+})()
 }))
 
     setRecipes(savedRecipes)
@@ -171,17 +206,40 @@ async function importRecipeFromUrl() {
   }
 
   setRecipeName(data.name || "")
-  setIngredients(
-  Array.isArray(data.ingredients)
-    ? data.ingredients
-        .map((ingredient) =>
-          ingredient
-            .replace(/\s*\(\s*,\s*/g, ", ")
-            .replace(/\s*\)\s*$/g, "")
-        )
-        .join(", ")
-    : ""
-)
+  const ingredientModifiers = [
+  "diced",
+  "chopped",
+  "minced",
+  "sliced",
+  "cubed",
+  "shredded",
+  "divided",
+  "to taste",
+  "bone-in",
+  "boneless",
+  "peeled",
+  "crushed",
+]
+
+const cleanedIngredients = []
+
+if (Array.isArray(data.ingredients)) {
+  data.ingredients.forEach((ingredient) => {
+    const cleaned = ingredient.trim()
+    const lower = cleaned.toLowerCase()
+
+    if (
+      ingredientModifiers.includes(lower) &&
+      cleanedIngredients.length > 0
+    ) {
+      cleanedIngredients[cleanedIngredients.length - 1] += `, ${cleaned}`
+    } else {
+      cleanedIngredients.push(cleaned)
+    }
+  })
+}
+
+setIngredients(cleanedIngredients.join(", "))
   setInstructions(
   Array.isArray(data.instructions)
     ? data.instructions.join("\n\n")
@@ -724,10 +782,13 @@ const pantryMatches = recipes
 </ul>
 {viewingRecipe?.id === recipe.id && (
   <div className="recipe-details">
-    <h3>Instructions</h3>
-    <p style={{ whiteSpace: "pre-line" }}>
+    <div className="recipe-details-header">
+      <h3>Instructions</h3>
+    </div>
+
+    <div className="recipe-instructions">
       {recipe.instructions || "No instructions saved."}
-    </p>
+    </div>
   </div>
 )}
           </div>

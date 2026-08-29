@@ -451,3 +451,30 @@ select:focus {
 .recipe-ingredients li {
   margin-bottom: 4px;
 }
+
+.recipe-details {
+  width: 100%;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #d9e0d3;
+}
+
+.recipe-details-header h3 {
+  margin: 0 0 12px;
+  color: #55624d;
+  font-size: 1.05rem;
+}
+
+.recipe-instructions {
+  white-space: pre-line;
+  line-height: 1.7;
+  color: #333;
+  text-align: left;
+  background: #f7f8f5;
+  padding: 16px;
+  border-radius: 12px;
+}
+
+.recipe-card > div:last-child {
+  margin-top: 16px;
+}
