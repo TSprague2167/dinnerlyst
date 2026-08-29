@@ -11,6 +11,7 @@ function App() {
   const [recipeName, setRecipeName] = useState("")
   const [ingredients, setIngredients] = useState("")
   const [instructions, setInstructions] = useState("")
+  const [viewingRecipe, setViewingRecipe] = useState(null)
   const [imageUrl, setImageUrl] = useState("")
   const [pantryItems, setPantryItems] = useState([])
   const [weeklyMeals, setWeeklyMeals] = useState(() => {
@@ -551,6 +552,7 @@ const pantryMatches = recipes
   </button>
 </nav>
 
+
       <section className="card">
         <h2>Add a Recipe</h2>
 
@@ -715,7 +717,19 @@ const pantryMatches = recipes
     </span>
   ))}
 </div>
-            <p>{recipe.ingredients.join(", ")}</p>
+            <ul className="recipe-ingredients">
+  {recipe.ingredients.map((ingredient, index) => (
+    <li key={index}>{ingredient}</li>
+  ))}
+</ul>
+{viewingRecipe?.id === recipe.id && (
+  <div className="recipe-details">
+    <h3>Instructions</h3>
+    <p style={{ whiteSpace: "pre-line" }}>
+      {recipe.instructions || "No instructions saved."}
+    </p>
+  </div>
+)}
           </div>
 
           <div>
@@ -730,6 +744,17 @@ const pantryMatches = recipes
             >
               ✏️ Edit
             </button>
+            <button
+  className="small-button"
+  type="button"
+  onClick={() =>
+    setViewingRecipe(
+      viewingRecipe?.id === recipe.id ? null : recipe
+    )
+  }
+>
+  {viewingRecipe?.id === recipe.id ? "Hide Recipe" : "View Recipe"}
+</button>
 
             <button
               className="delete-button"

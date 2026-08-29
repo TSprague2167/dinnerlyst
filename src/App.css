@@ -205,7 +205,7 @@ button {
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 8px;
-  background-color: #FFF8F2;
+  background-color: #FAFAF7;
   padding: 14px;
   border-radius: 14px;
   margin-top: 10px;
@@ -226,15 +226,15 @@ button {
 
 .delete-button {
   padding: 9px 12px;
-  background-color: #c0392b;
+  background-color: #8F9D83;
   color: white;
 }
 
 .small-button {
   padding: 9px 14px;
-  background: #f7f3ed;
-  color: #7a4b38;
-  border: 1px solid #e7ddd2;
+  background: #F4F6F1;
+  color: #55624D;
+  border: 1px solid #D9E0D3;
   border-radius: 10px;
   font-weight: 600;
   cursor: pointer;
@@ -439,4 +439,15 @@ select:focus {
 
 .shopping-progress-card .small-button {
   margin-top: 4px;
+}
+.recipe-ingredients {
+  margin: 10px 0 16px;
+  padding-left: 22px;
+  text-align: left;
+  line-height: 1.6;
+  color:#333
+}
+
+.recipe-ingredients li {
+  margin-bottom: 4px;
 }
