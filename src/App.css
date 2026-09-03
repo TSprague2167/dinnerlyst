@@ -699,3 +699,175 @@ select:focus {
     grid-template-columns: 1fr;
   }
 }
+
+.recipe-form-modern {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.recipe-import-modern {
+  padding: 20px;
+  border: 1px solid #e3ddd5;
+  border-radius: 16px;
+  background: #faf8f4;
+}
+
+.recipe-import-modern h3 {
+  margin: 0 0 6px;
+  color: #55624d;
+}
+
+.recipe-import-modern p {
+  margin: 0 0 14px;
+  color: #777;
+  font-size: 0.95rem;
+}
+
+.recipe-import-row {
+  display: flex;
+  gap: 12px;
+}
+
+.recipe-import-row input {
+  flex: 1;
+}
+
+.recipe-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.recipe-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.recipe-field label,
+.field-label {
+  font-weight: 600;
+  color: #55624d;
+}
+
+.category-section {
+  text-align: left;
+}
+
+.category-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.category-chip {
+  padding: 8px 14px;
+  border: 1px solid #d9dfd3;
+  border-radius: 999px;
+  background: #fffdf9;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.category-chip input {
+  display: none;
+}
+
+.category-chip.selected {
+  background: #94a58b;
+  color: white;
+  border-color: #94a58b;
+}
+
+.secondary-button {
+  padding: 10px 18px;
+  border: 1px solid #94a58b;
+  border-radius: 10px;
+  background: white;
+  color: #55624d;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (max-width: 700px) {
+  .recipe-form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .recipe-import-row {
+    flex-direction: column;
+  }
+}
+
+/* Add Recipe - details section */
+
+.recipe-details-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 24px;
+}
+
+.recipe-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recipe-field label {
+  font-weight: 600;
+  color: #55624d;
+  font-size: 16px;
+}
+
+.recipe-field input,
+.recipe-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px 16px;
+  border: 1px solid #ddd3c8;
+  border-radius: 14px;
+  background: #faf7f3;
+  font: inherit;
+}
+
+.recipe-field textarea {
+  min-height: 150px;
+  resize: vertical;
+}
+
+.recipe-save-button {
+  width: 100%;
+  margin-top: 20px;
+}
+
+@media (max-width: 700px) {
+  .recipe-details-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+.recipe-details-fields input {
+  min-height: 150px;
+}
+
+.recipe-details-fields {
+  width: 100%;
+}
+
+.recipe-field input,
+.recipe-field textarea {
+  width: 100%;
+}
+
+.recipe-details-fields input {
+  min-height: 150px;
+}
+
+.recipe-details-fields textarea {
+  height: 150px;
+  min-height: 150px;
+}

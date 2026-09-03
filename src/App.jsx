@@ -630,91 +630,126 @@ const pantryMatches = recipes
       <section className="card">
         <h2>Add a Recipe</h2>
 
-        <div className="form">
-        <div className="recipe-import">
-  <input
-    type="url"
-    placeholder="Paste recipe URL"
-    value={recipeUrl}
-    onChange={(e) => setRecipeUrl(e.target.value)}
-  />
- <button
-  type="button"
-  onClick={importRecipeFromUrl}
->
-  Import Recipe
-</button>
-</div>
-          <input
-            type="text"
-            placeholder="Recipe name"
-            value={recipeName}
-            onChange={(e) => setRecipeName(e.target.value)}
-          />
-          <input
-  type="file"
-  accept="image/*"
-  onChange={(e) => setImageFile(e.target.files[0])}
-/>
-          
-      <div>
-  <strong>Categories</strong>
+  <div className="form recipe-form-modern">
 
-  {[
-    "Chicken",
-    "Beef",
-    "Pork",
-    "Seafood",
-    "Pasta",
-    "Crockpot",
-    "Breakfast",
-    "Vegetarian",
-    "Soup",
-    "Dessert",
-  ].map((cat) => (
-    <label
-      key={cat}
-      style={{
-        display: "inline-block",
-        marginRight: "12px",
-        marginTop: "8px",
-      }}
-    >
+  <div className="recipe-import-modern">
+    <div>
+      <h3>Import from a recipe link</h3>
+      <p>Paste a URL and Dinnerlyst will pull in the recipe details.</p>
+    </div>
+
+    <div className="recipe-import-row">
       <input
-        type="checkbox"
-        checked={selectedCategories.includes(cat)}
-        onChange={(e) => {
-          if (e.target.checked) {
-            setSelectedCategories([...selectedCategories, cat])
-          } else {
-            setSelectedCategories(
-              selectedCategories.filter((item) => item !== cat)
-            )
-          }
-        }}
+        type="url"
+        placeholder="Paste recipe URL"
+        value={recipeUrl}
+        onChange={(e) => setRecipeUrl(e.target.value)}
       />
-      {" "}{cat}
-    </label>
-  ))}
-</div> 
+
+      <button
+        type="button"
+        className="secondary-button"
+        onClick={importRecipeFromUrl}
+      >
+        Import Recipe
+      </button>
+    </div>
+  </div>
+
+  <div className="recipe-form-row">
+    <div className="recipe-field">
+      <label>Recipe name</label>
+      <input
+        type="text"
+        placeholder="Recipe name"
+        value={recipeName}
+        onChange={(e) => setRecipeName(e.target.value)}
+      />
+    </div>
+
+    <div className="recipe-field">
+      <label>Recipe photo</label>
+      <input
+        type="file"
+        accept="image/*"
+        onChange={(e) => setImageFile(e.target.files[0])}
+      />
+    </div>
+  </div>
+
+  <div className="category-section">
+    <label className="field-label">Categories</label>
+
+    <div className="category-chips">
+      {[
+        "Chicken",
+        "Beef",
+        "Pork",
+        "Seafood",
+        "Pasta",
+        "Crockpot",
+        "Breakfast",
+        "Vegetarian",
+        "Soup",
+        "Dessert",
+      ].map((cat) => (
+        <label
+          key={cat}
+          className={
+            selectedCategories.includes(cat)
+              ? "category-chip selected"
+              : "category-chip"
+          }
+        >
+          <input
+            type="checkbox"
+            checked={selectedCategories.includes(cat)}
+            onChange={(e) => {
+              if (e.target.checked) {
+                setSelectedCategories([...selectedCategories, cat])
+              } else {
+                setSelectedCategories(
+                  selectedCategories.filter((item) => item !== cat)
+                )
+              }
+            }}
+          />
+
+          {cat}
+        </label>
+      ))}
+    </div>
+  </div>
    
 
-          <input
-            type="text"
-            placeholder="Ingredients separated by commas"
-            value={ingredients}
-            onChange={(e) => setIngredients(e.target.value)}
-          />
-          <textarea
-  placeholder="Recipe instructions"
-  value={instructions}
-  onChange={(e) => setInstructions(e.target.value)}
-  rows="6"
-/>
+         <div className="recipe-details-fields">
+  <div className="recipe-field">
+    <label>Ingredients</label>
+    <input
+      type="text"
+      placeholder="Ingredients separated by commas"
+      value={ingredients}
+      onChange={(e) => setIngredients(e.target.value)}
+    />
+  </div>
 
-          <button className="primary-button" onClick={addRecipe}>
-            {editingRecipeId ? "Save Changes" : "Add Recipe"}
-          </button>
+  <div className="recipe-field">
+    <label>Instructions</label>
+    <textarea
+      placeholder="Recipe instructions"
+      value={instructions}
+      onChange={(e) => setInstructions(e.target.value)}
+      rows="6"
+    />
+  </div>
+</div>
+
+<button
+  className="primary-button recipe-save-button"
+  onClick={addRecipe}
+>
+  {editingRecipeId ? "Save Changes" : "Add Recipe"}
+</button> 
         </div>
       </section>
 
