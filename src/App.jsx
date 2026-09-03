@@ -776,10 +776,19 @@ const pantryMatches = recipes
   ))}
 </div>
             <ul className="recipe-ingredients">
-  {recipe.ingredients.map((ingredient, index) => (
+  {(viewingRecipe?.id === recipe.id
+    ? recipe.ingredients
+    : recipe.ingredients.slice(0, 3)
+  ).map((ingredient, index) => (
     <li key={index}>{ingredient}</li>
   ))}
 </ul>
+
+{viewingRecipe?.id !== recipe.id && recipe.ingredients.length > 3 && (
+  <p className="more-ingredients">
+    + {recipe.ingredients.length - 3} more ingredients
+  </p>
+)}
 {viewingRecipe?.id === recipe.id && (
   <div className="recipe-details">
     <div className="recipe-details-header">
@@ -803,7 +812,7 @@ const pantryMatches = recipes
 )}
           </div>
 
-          <div>
+          <div className="recipe-actions">
             <button
               className="small-button"
               onClick={() => {
@@ -915,7 +924,20 @@ const pantryMatches = recipes
             <div className="meal-card" key={index}>
   <div className="meal-info">
     <span className="meal-day">{item.day}</span>
-    <h3>{item.meal.name}</h3>
+    {item.meal.image_url && (
+  <img
+    src={item.meal.image_url}
+    alt={item.meal.name}
+    className="meal-image"
+  />
+)}
+   <button
+  className="meal-title-button"
+  type="button"
+  onClick={() => setViewingRecipe(item.meal)}
+>
+  {item.meal.name}
+</button>
   </div>
 
   <div className="meal-actions">
@@ -925,7 +947,8 @@ const pantryMatches = recipes
 
     <button
       className="small-button"
-      onClick={() => toggleLock(item.day)}
+      onClick={() => toggle
+        (item.day)}
     >
       {lockedDays.includes(item.day) ? "Unlock" : "Lock"}
     </button>
@@ -933,6 +956,53 @@ const pantryMatches = recipes
 </div>
           ))}
           </div>
+          {viewingRecipe && (
+  <div className="recipe-modal-overlay">
+    <div className="recipe-modal">
+  <button
+    className="recipe-modal-close"
+    type="button"
+    onClick={() => setViewingRecipe(null)}
+  >
+    ✕
+  </button>
+
+  {viewingRecipe.image_url && (
+    <img
+      src={viewingRecipe.image_url}
+      alt={viewingRecipe.name}
+      className="recipe-modal-image"
+    />
+  )}
+
+  <h2>{viewingRecipe.name}</h2>
+
+  <h3>Ingredients</h3>
+
+  <ul className="recipe-ingredients">
+    {viewingRecipe.ingredients.map((ingredient, index) => (
+      <li key={index}>{ingredient}</li>
+    ))}
+  </ul>
+
+  <h3>Instructions</h3>
+
+  <div className="recipe-instructions">
+    {viewingRecipe.instructions
+      ? viewingRecipe.instructions
+          .split(/\n\s*\n/)
+          .filter((step) => step.trim())
+          .map((step, index) => (
+            <div className="instruction-step" key={index}>
+              <span className="step-number">{index + 1}</span>
+              <p>{step.trim()}</p>
+            </div>
+          ))
+      : "No instructions saved."}
+  </div>
+</div>
+  </div>
+)}
         </section>
         )}
         {activeTab === "planner" && (

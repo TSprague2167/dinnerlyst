@@ -505,3 +505,152 @@ select:focus {
   line-height: 1.7;
   flex: 1;
 }
+
+.more-ingredients {
+  margin: 8px 0 0;
+  font-size: 0.88rem;
+  color: #7a846f;
+  font-style: italic;
+}
+
+.recipe-actions {
+  width: 100%;
+  display: flex;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.meal-image {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  border-radius: 12px;
+  margin: 12px 0;
+}
+
+.meal-title-button {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: #2f2f2f;
+  cursor: pointer;
+}
+
+.meal-title-button:hover {
+  color: #6f8066;
+}
+
+.recipe-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 1000;
+}
+
+.recipe-modal {
+  position: relative;
+  background: #fffdf9;
+  width: 100%;
+  max-width: 700px;
+  max-height: 85vh;
+  overflow-y: auto;
+  border-radius: 24px;
+  padding: 32px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+}
+
+.recipe-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  border: none;
+  background: transparent;
+  font-size: 1.4rem;
+  cursor: pointer;
+}
+
+.recipe-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  color: #55624d;
+  font-size: 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.recipe-modal h2 {
+  text-align: center;
+  margin: 10px 0 24px;
+  color: #7a4f3b;
+}
+
+.recipe-modal h3 {
+  text-align: left;
+  color: #55624d;
+  margin: 24px 0 12px;
+}
+
+.recipe-modal .recipe-ingredients {
+  text-align: left;
+  margin: 0;
+  padding-left: 22px;
+  line-height: 1.8;
+}
+
+.recipe-modal .recipe-instructions {
+  text-align: left;
+}
+
+.recipe-modal .recipe-ingredients {
+  padding: 0 24px 0 44px;
+  margin-bottom: 28px;
+}
+
+.recipe-modal .recipe-instructions {
+  padding: 0 24px 24px;
+}
+
+.recipe-modal .instruction-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.recipe-modal .step-number {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #94a58b;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+
+.recipe-modal .instruction-step p {
+  margin: 4px 0 0;
+  line-height: 1.6;
+}
