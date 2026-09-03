@@ -654,3 +654,48 @@ select:focus {
   margin: 4px 0 0;
   line-height: 1.6;
 }
+
+.swap-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.swap-option {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #d9dfd3;
+  border-radius: 14px;
+  background: #fffdf9;
+  cursor: pointer;
+  font: inherit;
+  color: #333;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.swap-option:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+
+.swap-option-image {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+}
+
+.swap-option span {
+  padding: 12px 10px;
+  font-weight: 600;
+  text-align: center;
+}
+
+@media (max-width: 700px) {
+  .swap-options {
+    grid-template-columns: 1fr;
+  }
+}

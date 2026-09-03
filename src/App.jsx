@@ -1032,28 +1032,36 @@ const pantryMatches = recipes
 
       <h2>Choose a new meal</h2>
 
-      <div className="swap-options">
-        {swapOptions.recipes.map((recipe) => (
-         <button
-  key={recipe.id}
-  className="swap-option"
-  type="button"
-  onClick={() => {
-    const updatedMeals = weeklyMeals.map((item) =>
-      item.day === swapOptions.day
-        ? { ...item, meal: recipe }
-        : item
-    )
+     <div className="swap-options">
+  {swapOptions.recipes.map((recipe) => (
+    <button
+      key={recipe.id}
+      className="swap-option"
+      type="button"
+      onClick={() => {
+        const updatedMeals = weeklyMeals.map((item) =>
+          item.day === swapOptions.day
+            ? { ...item, meal: recipe }
+            : item
+        )
 
-    setWeeklyMeals(updatedMeals)
-    createShoppingList(updatedMeals)
-    setSwapOptions(null)
-  }}
->
-  {recipe.name}
-</button>
-        ))}
-      </div>
+        setWeeklyMeals(updatedMeals)
+        createShoppingList(updatedMeals)
+        setSwapOptions(null)
+      }}
+    >
+      {recipe.image_url && (
+        <img
+          src={recipe.image_url}
+          alt={recipe.name}
+          className="swap-option-image"
+        />
+      )}
+
+      <span>{recipe.name}</span>
+    </button>
+  ))}
+</div>
     </div>
   </div>
 )}
