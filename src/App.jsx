@@ -12,6 +12,7 @@ function App() {
   const [ingredients, setIngredients] = useState("")
   const [instructions, setInstructions] = useState("")
   const [viewingRecipe, setViewingRecipe] = useState(null)
+  const [swapOptions, setSwapOptions] = useState(null)
   const [imageUrl, setImageUrl] = useState("")
   const [pantryItems, setPantryItems] = useState([])
   const [weeklyMeals, setWeeklyMeals] = useState(() => {
@@ -376,6 +377,21 @@ function toggleDayLock(day) {
   if (lockedDays.includes(dayToChange)) {
     return
   }
+  const currentMeal = weeklyMeals.find(
+  (item) => item.day === dayToChange
+)?.meal
+
+const options = recipes
+  .filter((recipe) => recipe.id !== currentMeal?.id)
+  .sort(() => Math.random() - 0.5)
+  .slice(0, 3)
+
+setSwapOptions({
+  day: dayToChange,
+  recipes: options
+})
+
+return
 
   const updatedMeals = weeklyMeals.map((item) => {
     if (item.day === dayToChange) {
@@ -1001,6 +1017,44 @@ const pantryMatches = recipes
       : "No instructions saved."}
   </div>
 </div>
+  </div>
+)}
+{swapOptions && (
+  <div className="recipe-modal-overlay">
+    <div className="recipe-modal">
+      <button
+        className="recipe-modal-close"
+        type="button"
+        onClick={() => setSwapOptions(null)}
+      >
+        ✕
+      </button>
+
+      <h2>Choose a new meal</h2>
+
+      <div className="swap-options">
+        {swapOptions.recipes.map((recipe) => (
+         <button
+  key={recipe.id}
+  className="swap-option"
+  type="button"
+  onClick={() => {
+    const updatedMeals = weeklyMeals.map((item) =>
+      item.day === swapOptions.day
+        ? { ...item, meal: recipe }
+        : item
+    )
+
+    setWeeklyMeals(updatedMeals)
+    createShoppingList(updatedMeals)
+    setSwapOptions(null)
+  }}
+>
+  {recipe.name}
+</button>
+        ))}
+      </div>
+    </div>
   </div>
 )}
         </section>
