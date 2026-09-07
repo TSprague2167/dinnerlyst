@@ -982,12 +982,16 @@ const pantryMatches = recipes
             <div className="meal-card" key={index}>
   <div className="meal-info">
     <span className="meal-day">{item.day}</span>
-    {item.meal.image_url && (
+   {item.meal.image_url ? (
   <img
     src={item.meal.image_url}
     alt={item.meal.name}
     className="meal-image"
   />
+) : (
+  <div className="meal-image-placeholder">
+    <span>🍽️</span>
+  </div>
 )}
    <button
   className="meal-title-button"
