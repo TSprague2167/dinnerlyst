@@ -811,12 +811,16 @@ const pantryMatches = recipes
       )
       .map((recipe) => (
         <div className="recipe-card" key={recipe.id}>
-          {recipe.image_url && (
+         {recipe.image_url ? (
   <img
     src={recipe.image_url}
     alt={recipe.name}
     className="recipe-image"
   />
+) : (
+  <div className="recipe-image-placeholder">
+    <span>🍽️</span>
+  </div>
 )}
           <div>
             <strong>{recipe.name}</strong>
