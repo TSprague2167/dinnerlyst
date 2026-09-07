@@ -759,7 +759,7 @@ const pantryMatches = recipes
         </button>
       </section>
 
-      <main className="grid">
+     <main className="grid recipes-grid">
       {activeTab === "recipes" && (
         <section className="card">
           <h2>📖 Your Recipes ({recipes.length})</h2>
@@ -800,7 +800,8 @@ const pantryMatches = recipes
       No recipes found. Try another search or category.
     </p>
   ) : (
-    recipes
+    <div className="recipe-gallery">
+  {recipes
       .filter((recipe) =>
         recipe.name.toLowerCase().includes(searchTerm.toLowerCase())
       )
@@ -896,6 +897,8 @@ const pantryMatches = recipes
           </div>
         </div>
       ))
+        }
+</div>
   )}
         </section>
         )}
