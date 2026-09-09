@@ -217,6 +217,7 @@ button {
   justify-content: space-between;
   gap: 12px;
   align-items: center;
+  touch-action: pan-y;
 }
 
 .recipe-card p,

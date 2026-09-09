@@ -13,6 +13,8 @@ function App() {
   const [instructions, setInstructions] = useState("")
   const [viewingRecipe, setViewingRecipe] = useState(null)
   const [swapOptions, setSwapOptions] = useState(null)
+  const [touchStartX, setTouchStartX] = useState(null)
+  const [touchEndX, setTouchEndX] = useState(null)
   const [imageUrl, setImageUrl] = useState("")
   const [pantryItems, setPantryItems] = useState([])
   const [weeklyMeals, setWeeklyMeals] = useState(() => {
@@ -380,7 +382,22 @@ return {
     setWeeklyMeals(meals)
     createShoppingList(meals)
   }
+function handleTouchStart(e) {
+  setTouchEndX(null)
+  setTouchStartX(e.targetTouches[0].clientX)
+}
+function handleTouchMove(e) {
+  setTouchEndX(e.targetTouches[0].clientX)
+}
+function handleTouchEnd(day) {
+  if (touchStartX === null || touchEndX === null) return
 
+  const distance = touchStartX - touchEndX
+
+  if (distance > 50) {
+    regenerateMeal(day)
+  }
+}
  function regenerateMeal(dayToChange) {
   console.log("dayToChange:", dayToChange)
  console.log("lockedDays:", lockedDays) 
@@ -1001,7 +1018,13 @@ const pantryMatches = recipes
           <div className="meal-grid">
 
           {weeklyMeals.map((item, index) => (
-            <div className="meal-card" key={index}>
+            <div
+  className="meal-card"
+  key={index}
+  onTouchStart={handleTouchStart}
+  onTouchMove={handleTouchMove}
+  onTouchEnd={() => handleTouchEnd(item.day)}
+>
   <div className="meal-info">
     <span className="meal-day">{item.day}</span>
    {item.meal.image_url ? (
