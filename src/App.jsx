@@ -342,6 +342,7 @@ function toggleDayLock(day) {
 }
   function generateWeeklyMeals() {
     const randomMeals = []
+    const usedRecipeIds = new Set()
     if (recipes.length === 0) return
 
     const meals = daysOfWeek.map((day) => {
@@ -351,17 +352,29 @@ function toggleDayLock(day) {
   )
 
   if (lockedDays.includes(day) && existingMeal) {
-    return existingMeal
-  }
+  usedRecipeIds.add(existingMeal.meal.id)
+  return existingMeal
+}
 
-  const randomIndex = Math.floor(
-    Math.random() * recipes.length
-  )
+  const availableRecipes = recipes.filter(
+  (recipe) => !usedRecipeIds.has(recipe.id)
+)
 
-  return {
-    day,
-    meal: recipes[randomIndex]
-  }
+const recipePool =
+  availableRecipes.length > 0 ? availableRecipes : recipes
+
+const randomIndex = Math.floor(
+  Math.random() * recipePool.length
+)
+
+const selectedRecipe = recipePool[randomIndex]
+
+usedRecipeIds.add(selectedRecipe.id)
+
+return {
+  day,
+  meal: selectedRecipe
+}
 })
 
     setWeeklyMeals(meals)
@@ -380,9 +393,18 @@ function toggleDayLock(day) {
   const currentMeal = weeklyMeals.find(
   (item) => item.day === dayToChange
 )?.meal
-
+const usedRecipeIds = new Set(
+  weeklyMeals
+    .filter((item) => item.day !== dayToChange)
+    .map((item) => item.meal?.id)
+    .filter(Boolean)
+)
 const options = recipes
-  .filter((recipe) => recipe.id !== currentMeal?.id)
+  .filter(
+  (recipe) =>
+    recipe.id !== currentMeal?.id &&
+    !usedRecipeIds.has(recipe.id)
+)
   .sort(() => Math.random() - 0.5)
   .slice(0, 3)
 
