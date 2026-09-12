@@ -15,6 +15,8 @@ function App() {
   const [swapOptions, setSwapOptions] = useState(null)
   const [touchStartX, setTouchStartX] = useState(null)
   const [touchEndX, setTouchEndX] = useState(null)
+  const [swipingDay, setSwipingDay] = useState(null)
+  const [swipeOffsetX, setSwipeOffsetX] = useState(0)
   const [imageUrl, setImageUrl] = useState("")
   const [pantryItems, setPantryItems] = useState([])
   const [weeklyMeals, setWeeklyMeals] = useState(() => {
@@ -382,21 +384,31 @@ return {
     setWeeklyMeals(meals)
     createShoppingList(meals)
   }
-function handleTouchStart(e) {
+function handleTouchStart(e, day) {
+  setSwipingDay(day)
   setTouchEndX(null)
   setTouchStartX(e.targetTouches[0].clientX)
 }
 function handleTouchMove(e) {
-  setTouchEndX(e.targetTouches[0].clientX)
+  const currentX = e.targetTouches[0].clientX
+  setTouchEndX(currentX)
+
+  if (touchStartX !== null) {
+    setSwipeOffsetX(currentX - touchStartX)
+  }
 }
-function handleTouchEnd(day) {
-  if (touchStartX === null || touchEndX === null) return
+function handleTouchEnd(e, day) {
+  if (touchStartX === null) return
 
-  const distance = touchStartX - touchEndX
+  const endX = e.changedTouches[0].clientX
+  const distance = touchStartX - endX
 
-  if (distance > 50) {
+  if (distance > 100) {
     regenerateMeal(day)
   }
+
+  setSwipeOffsetX(0)
+  setSwipingDay(null)
 }
  function regenerateMeal(dayToChange) {
   console.log("dayToChange:", dayToChange)
@@ -1021,9 +1033,19 @@ const pantryMatches = recipes
             <div
   className="meal-card"
   key={index}
-  onTouchStart={handleTouchStart}
+  style={{
+  transform:
+    swipingDay === item.day
+      ? `translateX(${Math.min(swipeOffsetX, 0)}px)`
+      : "translateX(0px)",
+      transition:
+  swipingDay === item.day
+    ? "none"
+    : "transform 0.2s ease",
+}}
+  onTouchStart={(e) => handleTouchStart(e, item.day)}
   onTouchMove={handleTouchMove}
-  onTouchEnd={() => handleTouchEnd(item.day)}
+  onTouchEnd={(e) => handleTouchEnd(e, item.day)}
 >
   <div className="meal-info">
     <span className="meal-day">{item.day}</span>
