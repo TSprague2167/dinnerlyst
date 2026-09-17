@@ -437,12 +437,12 @@ const options = recipes
   .sort(() => Math.random() - 0.5)
   .slice(0, 3)
 
-setSwapOptions({
-  day: dayToChange,
-  recipes: options
-})
+//setSwapOptions({
+//  day: dayToChange,
+//  recipes: options
+// })
 
-return
+// return
 
   const updatedMeals = weeklyMeals.map((item) => {
     if (item.day === dayToChange) {
