@@ -176,7 +176,7 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
 async function uploadRecipeImage(file) {
   if (!file) return ""
 
-  const fileName = `${Date.now()}-${file.name}`
+ const fileName = `${session.user.id}/${Date.now()}-${file.name}`
 
   const { error } = await supabase.storage
     .from("recipe-images")
