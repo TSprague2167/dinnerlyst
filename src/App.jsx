@@ -445,17 +445,27 @@ const options = recipes
 // return
 
   const updatedMeals = weeklyMeals.map((item) => {
-    if (item.day === dayToChange) {
-      const randomIndex = Math.floor(Math.random() * recipes.length)
+  if (item.day === dayToChange) {
+    const availableRecipes = recipes.filter(
+      (recipe) =>
+        recipe.id !== currentMeal?.id &&
+        !usedRecipeIds.has(recipe.id)
+    )
 
-      return {
-        day: item.day,
-        meal: recipes[randomIndex]
-      }
+    if (availableRecipes.length === 0) return item
+
+    const randomIndex = Math.floor(
+      Math.random() * availableRecipes.length
+    )
+
+    return {
+      day: item.day,
+      meal: availableRecipes[randomIndex]
     }
+  }
 
-    return item
-  })
+  return item
+})
 
   setWeeklyMeals(updatedMeals)
   createShoppingList(updatedMeals)
