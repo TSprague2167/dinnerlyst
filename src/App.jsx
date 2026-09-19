@@ -689,7 +689,14 @@ const pantryMatches = recipes
           >
             +
           </button>
-        </div>
+               </div>
+
+        <button
+          className="onboarding-continue"
+          onClick={() => setOnboardingStep(2)}
+        >
+          Continue →
+        </button>
       </div>
     </div>
   )
