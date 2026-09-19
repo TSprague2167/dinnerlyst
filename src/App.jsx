@@ -843,6 +843,20 @@ if (onboardingStep === 3) {
         <p>
           Tell us about allergies, restrictions, or foods your household doesn't like.
         </p>
+        <div className="onboarding-field">
+  <label>Allergies or restrictions</label>
+  <input
+    type="text"
+    placeholder="e.g. peanuts, shellfish, dairy"
+    value={onboardingAnswers.allergies}
+    onChange={(e) =>
+      setOnboardingAnswers({
+        ...onboardingAnswers,
+        allergies: e.target.value
+      })
+    }
+  />
+</div>
       </div>
     </div>
   )
