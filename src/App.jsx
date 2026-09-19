@@ -38,6 +38,7 @@ function App() {
   return saved ? JSON.parse(saved) : []
 })
 const [onboardingStep, setOnboardingStep] = useState(1)
+const [householdSize, setHouseholdSize] = useState(2)
 
 const [onboardingAnswers, setOnboardingAnswers] = useState({
   householdSize: "",
@@ -662,6 +663,37 @@ const pantryMatches = recipes
       </div>
     )
   }
+ if (onboardingStep === 1) {
+  return (
+    <div>
+      <h1>Welcome to Dinnerlyst 🌿</h1>
+      <p>Let's make meal planning fit your household.</p>
+
+      <div className="onboarding-card">
+        <h2>Who are we cooking for?</h2>
+        <p>How many people are you feeding?</p>
+
+        <div className="household-counter">
+          <button
+            onClick={() =>
+              setHouseholdSize(Math.max(1, householdSize - 1))
+            }
+          >
+            −
+          </button>
+
+          <span>{householdSize}</span>
+
+          <button
+            onClick={() => setHouseholdSize(householdSize + 1)}
+          >
+            +
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
   return (
     <div className="app">
