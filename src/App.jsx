@@ -749,6 +749,25 @@ if (onboardingStep === 2) {
 >
   Anti-Inflammatory
 </button>
+<button
+  className={
+    onboardingAnswers.dietPreferences.includes("Vegetarian")
+      ? "diet-option selected"
+      : "diet-option"
+  }
+  onClick={() => {
+    const current = onboardingAnswers.dietPreferences
+
+    setOnboardingAnswers({
+      ...onboardingAnswers,
+      dietPreferences: current.includes("Vegetarian")
+        ? current.filter((item) => item !== "Vegetarian")
+        : [...current, "Vegetarian"]
+    })
+  }}
+>
+  Vegetarian
+</button>
 </div>
       </div>
     </div>
