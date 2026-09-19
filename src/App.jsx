@@ -701,7 +701,19 @@ const pantryMatches = recipes
     </div>
   )
 }
+if (onboardingStep === 2) {
+  return (
+    <div>
+      <h1>Welcome to Dinnerlyst 🌿</h1>
+      <p>Let's make meal planning fit your household.</p>
 
+      <div className="onboarding-card">
+        <h2>How does your household eat?</h2>
+        <p>Choose any that fit. You can change these later.</p>
+      </div>
+    </div>
+  )
+}
   return (
     <div className="app">
       <header className="hero">
