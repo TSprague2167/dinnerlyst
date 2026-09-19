@@ -822,6 +822,12 @@ if (onboardingStep === 2) {
   No Preference
 </button>
 </div>
+<button
+  className="onboarding-continue"
+  onClick={() => setOnboardingStep(3)}
+>
+  Continue →
+</button>
       </div>
     </div>
   )
