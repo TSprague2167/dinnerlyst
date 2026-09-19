@@ -151,7 +151,7 @@ input {
 
 input:focus {
   outline: none;
-  border-color: #FF7A59;
+  border-color:#6B8F71 ;
 }
 
 button {
@@ -163,14 +163,14 @@ button {
 
 .primary-button {
   padding: 14px 18px;
-  background-color: #FF7A59;
+  background-color: #6B8F71;
   color: white;
 }
 
 .generate-button {
   width: 100%;
   padding: 16px 20px;
-  background-color: #7C4A35;
+  background-color: #6B8F71;
   color: white;
   font-size: 18px;
   font-weight: bold;
@@ -243,7 +243,7 @@ button {
 }
 
 .small-button:hover {
-  background: #eee7de;
+  background: #e8ede5;
   transform: translateY(-1px);
 }
 
@@ -326,7 +326,7 @@ select {
 
 select:focus {
   outline: none;
-  border-color: #FF7A59;
+  border-color: #6B8F71;
 }
 .category-badge {
   display: inline-block;
@@ -492,7 +492,7 @@ select:focus {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: #8f9d83;
+  background: #94a58b;
   color: white;
   display: flex;
   align-items: center;
@@ -602,7 +602,7 @@ select:focus {
 .recipe-modal h2 {
   text-align: center;
   margin: 10px 0 24px;
-  color: #7a4f3b;
+  color: #55624d;
 }
 
 .recipe-modal h3 {
@@ -751,6 +751,7 @@ select:focus {
 .field-label {
   font-weight: 600;
   color: #55624d;
+  font-size: 16px;
 }
 
 .category-section {
@@ -810,19 +811,9 @@ select:focus {
   grid-template-columns: 1fr 1fr;
   gap: 18px;
   margin-top: 24px;
+  width: 100%;
 }
 
-.recipe-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.recipe-field label {
-  font-weight: 600;
-  color: #55624d;
-  font-size: 16px;
-}
 
 .recipe-field input,
 .recipe-field textarea {
@@ -843,6 +834,8 @@ select:focus {
 .recipe-save-button {
   width: 100%;
   margin-top: 20px;
+  background: #6B8F71;
+  color: white;
 }
 
 @media (max-width: 700px) {
@@ -855,14 +848,8 @@ select:focus {
   min-height: 150px;
 }
 
-.recipe-details-fields {
-  width: 100%;
-}
 
-.recipe-field input,
-.recipe-field textarea {
-  width: 100%;
-}
+
 
 .recipe-details-fields input {
   min-height: 150px;
@@ -945,4 +932,95 @@ select:focus {
 .meal-image-placeholder span {
   font-size: 42px;
   opacity: 0.55;
+}
+
+/* Onboarding */
+
+.onboarding-card {
+  max-width: 520px;
+  margin: 40px auto 0;
+  padding: 32px;
+  background: #ffffff;
+  border: 1px solid #e7ddd5;
+  border-radius: 24px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+  text-align: center;
+}
+
+.onboarding-card h2 {
+  margin: 0 0 8px;
+  color: #2e2e2e;
+}
+
+.onboarding-card p {
+  margin: 0 0 24px;
+  color: #777;
+}
+
+.household-counter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+
+.household-counter button {
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #6b8f71;
+  color: white;
+  font-size: 28px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.household-counter button:active {
+  transform: scale(0.9);
+}
+
+.household-counter span {
+  min-width: 45px;
+  font-size: 32px;
+  font-weight: 700;
+  color: #2e2e2e;
+}
+
+.onboarding-continue {
+  margin-top: 24px;
+  padding: 12px 28px;
+  border: none;
+  border-radius: 999px;
+  background: #6B8F71;
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.onboarding-continue:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.12);
+}
+
+.diet-option {
+  padding: 10px 16px;
+  border: 1px solid #d9dfd3;
+  border-radius: 999px;
+  background: #fffdf9;
+  color: #55624d;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.diet-option.selected {
+  background: #94a58b;
+  color: white;
+  border-color: #94a58b;
+  transform: scale(1.05);
 }
