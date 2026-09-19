@@ -890,6 +890,23 @@ if (onboardingStep === 4) {
       <div className="onboarding-card">
         <h2>What kind of cook are you?</h2>
         <p>We'll use this to choose recipes that fit your style.</p>
+        <div className="diet-options">
+  <button
+    className={
+      onboardingAnswers.cookingStyle === "Quick & Easy"
+        ? "diet-option selected"
+        : "diet-option"
+    }
+    onClick={() =>
+      setOnboardingAnswers({
+        ...onboardingAnswers,
+        cookingStyle: "Quick & Easy"
+      })
+    }
+  >
+    ⚡ Quick & Easy
+  </button>
+</div>
       </div>
     </div>
   )
