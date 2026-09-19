@@ -881,6 +881,19 @@ if (onboardingStep === 3) {
     </div>
   )
 }
+if (onboardingStep === 4) {
+  return (
+    <div>
+      <h1>Welcome to Dinnerlyst 🌿</h1>
+      <p>Let's make meal planning fit your household.</p>
+
+      <div className="onboarding-card">
+        <h2>What kind of cook are you?</h2>
+        <p>We'll use this to choose recipes that fit your style.</p>
+      </div>
+    </div>
+  )
+}
   return (
     <div className="app">
       <header className="hero">
