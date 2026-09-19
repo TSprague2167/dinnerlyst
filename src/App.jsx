@@ -938,6 +938,12 @@ if (onboardingStep === 4) {
   👩‍🍳 I Like to Cook
 </button>
       </div>
+      <button
+  className="onboarding-continue"
+  onClick={() => setOnboardingStep(5)}
+>
+  Continue →
+</button>
     </div>
   )
 }
