@@ -710,6 +710,27 @@ if (onboardingStep === 2) {
       <div className="onboarding-card">
         <h2>How does your household eat?</h2>
         <p>Choose any that fit. You can change these later.</p>
+        <div className="diet-options">
+  <button
+    className={
+      onboardingAnswers.dietPreferences.includes("High Protein")
+        ? "diet-option selected"
+        : "diet-option"
+    }
+    onClick={() => {
+      const current = onboardingAnswers.dietPreferences
+
+      setOnboardingAnswers({
+        ...onboardingAnswers,
+        dietPreferences: current.includes("High Protein")
+          ? current.filter((item) => item !== "High Protein")
+          : [...current, "High Protein"]
+      })
+    }}
+  >
+    High Protein
+  </button>
+</div>
       </div>
     </div>
   )
