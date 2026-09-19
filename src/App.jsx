@@ -922,6 +922,21 @@ if (onboardingStep === 4) {
 >
   🍳 Balanced
 </button>
+<button
+  className={
+    onboardingAnswers.cookingStyle === "I Like to Cook"
+      ? "diet-option selected"
+      : "diet-option"
+  }
+  onClick={() =>
+    setOnboardingAnswers({
+      ...onboardingAnswers,
+      cookingStyle: "I Like to Cook"
+    })
+  }
+>
+  👩‍🍳 I Like to Cook
+</button>
       </div>
     </div>
   )
