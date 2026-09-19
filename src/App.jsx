@@ -857,6 +857,20 @@ if (onboardingStep === 3) {
     }
   />
 </div>
+<div className="onboarding-field">
+  <label>Foods we don't like</label>
+  <input
+    type="text"
+    placeholder="e.g. mushrooms, olives, seafood"
+    value={onboardingAnswers.dislikedFoods}
+    onChange={(e) =>
+      setOnboardingAnswers({
+        ...onboardingAnswers,
+        dislikedFoods: e.target.value
+      })
+    }
+  />
+</div>
       </div>
     </div>
   )
