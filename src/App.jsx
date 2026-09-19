@@ -768,6 +768,25 @@ if (onboardingStep === 2) {
 >
   Vegetarian
 </button>
+<button
+  className={
+    onboardingAnswers.dietPreferences.includes("Vegan")
+      ? "diet-option selected"
+      : "diet-option"
+  }
+  onClick={() => {
+    const current = onboardingAnswers.dietPreferences
+
+    setOnboardingAnswers({
+      ...onboardingAnswers,
+      dietPreferences: current.includes("Vegan")
+        ? current.filter((item) => item !== "Vegan")
+        : [...current, "Vegan"]
+    })
+  }}
+>
+  Vegan
+</button>
 </div>
       </div>
     </div>
