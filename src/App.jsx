@@ -947,6 +947,21 @@ if (onboardingStep === 4) {
     </div>
   )
 }
+if (onboardingStep === 5) {
+  return (
+    <div>
+      <h1>You're all set! 🌿</h1>
+      <p>Dinnerlyst is ready to make meal planning a whole lot easier.</p>
+
+      <div className="onboarding-card">
+        <h2>Let's plan some dinners.</h2>
+        <p>
+          We'll use your preferences to help personalize your meal planning.
+        </p>
+      </div>
+    </div>
+  )
+}
   return (
     <div className="app">
       <header className="hero">
