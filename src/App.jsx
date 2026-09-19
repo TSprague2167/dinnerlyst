@@ -871,6 +871,12 @@ if (onboardingStep === 3) {
     }
   />
 </div>
+<button
+  className="onboarding-continue"
+  onClick={() => setOnboardingStep(4)}
+>
+  Continue →
+</button>
       </div>
     </div>
   )
