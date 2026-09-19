@@ -730,6 +730,25 @@ if (onboardingStep === 2) {
   >
     High Protein
   </button>
+  <button
+  className={
+    onboardingAnswers.dietPreferences.includes("Anti-Inflammatory")
+      ? "diet-option selected"
+      : "diet-option"
+  }
+  onClick={() => {
+    const current = onboardingAnswers.dietPreferences
+
+    setOnboardingAnswers({
+      ...onboardingAnswers,
+      dietPreferences: current.includes("Anti-Inflammatory")
+        ? current.filter((item) => item !== "Anti-Inflammatory")
+        : [...current, "Anti-Inflammatory"]
+    })
+  }}
+>
+  Anti-Inflammatory
+</button>
 </div>
       </div>
     </div>
