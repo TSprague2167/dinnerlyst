@@ -806,6 +806,21 @@ if (onboardingStep === 2) {
 >
   Gluten-Free
 </button>
+<button
+  className={
+    onboardingAnswers.dietPreferences.length === 0
+      ? "diet-option selected"
+      : "diet-option"
+  }
+  onClick={() => {
+    setOnboardingAnswers({
+      ...onboardingAnswers,
+      dietPreferences: []
+    })
+  }}
+>
+  No Preference
+</button>
 </div>
       </div>
     </div>
