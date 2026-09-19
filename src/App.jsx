@@ -37,7 +37,10 @@ function App() {
   const saved = localStorage.getItem("checkedShoppingItems")
   return saved ? JSON.parse(saved) : []
 })
-const [onboardingStep, setOnboardingStep] = useState(1)
+const [onboardingStep, setOnboardingStep] = useState(() => {
+  const completed = localStorage.getItem("onboardingComplete")
+  return completed === "true" ? 0 : 1
+})
 const [householdSize, setHouseholdSize] = useState(2)
 
 const [onboardingAnswers, setOnboardingAnswers] = useState({
@@ -958,6 +961,15 @@ if (onboardingStep === 5) {
         <p>
           We'll use your preferences to help personalize your meal planning.
         </p>
+        <button
+  className="onboarding-continue"
+  onClick={() => {
+    localStorage.setItem("onboardingComplete", "true")
+    setOnboardingStep(0)
+  }}
+>
+  Start Planning →
+</button>
       </div>
     </div>
   )
