@@ -37,6 +37,15 @@ function App() {
   const saved = localStorage.getItem("checkedShoppingItems")
   return saved ? JSON.parse(saved) : []
 })
+const [onboardingStep, setOnboardingStep] = useState(1)
+
+const [onboardingAnswers, setOnboardingAnswers] = useState({
+  householdSize: "",
+  dietPreferences: [],
+  allergies: "",
+  dislikedFoods: "",
+  cookingStyle: ""
+})
 useEffect(() => {
   localStorage.setItem(
     "checkedShoppingItems",
