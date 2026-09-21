@@ -672,6 +672,22 @@ const pantryMatches = recipes
       </div>
     )
   }
+  const saveOnboardingPreferences = async () => {
+  const { error } = await supabase
+    .from("user_preferences")
+    .insert({
+      user_id: session.user.id,
+      household_size: onboardingAnswers.householdSize,
+      diet_preferences: onboardingAnswers.dietPreferences,
+      allergies: onboardingAnswers.allergies,
+      disliked_foods: onboardingAnswers.dislikedFoods,
+      cooking_style: onboardingAnswers.cookingStyle
+    })
+
+  if (error) {
+    console.error("Error saving preferences:", error)
+  }
+}
  if (onboardingStep === 1) {
   return (
     <div>
@@ -969,7 +985,8 @@ if (onboardingStep === 5) {
         </p>
         <button
   className="onboarding-continue"
-  onClick={() => {
+ onClick={async () => {
+  await saveOnboardingPreferences()
     localStorage.setItem("onboardingAnswers", JSON.stringify(onboardingAnswers))
     localStorage.setItem("onboardingComplete", "true")
     setOnboardingStep(0)
