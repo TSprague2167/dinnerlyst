@@ -43,12 +43,18 @@ const [onboardingStep, setOnboardingStep] = useState(() => {
 })
 const [householdSize, setHouseholdSize] = useState(2)
 
-const [onboardingAnswers, setOnboardingAnswers] = useState({
-  householdSize: "",
-  dietPreferences: [],
-  allergies: "",
-  dislikedFoods: "",
-  cookingStyle: ""
+const [onboardingAnswers, setOnboardingAnswers] = useState(() => {
+  const saved = localStorage.getItem("onboardingAnswers")
+
+  return saved
+    ? JSON.parse(saved)
+    : {
+        householdSize: 2,
+        dietPreferences: [],
+        allergies: "",
+        dislikedFoods: "",
+        cookingStyle: ""
+      }
 })
 useEffect(() => {
   localStorage.setItem(
