@@ -964,6 +964,7 @@ if (onboardingStep === 5) {
         <button
   className="onboarding-continue"
   onClick={() => {
+    localStorage.setItem("onboardingAnswers", JSON.stringify(onboardingAnswers))
     localStorage.setItem("onboardingComplete", "true")
     setOnboardingStep(0)
   }}
