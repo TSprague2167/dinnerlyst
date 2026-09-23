@@ -98,6 +98,7 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
   useEffect(() => {
     if (session) {
       getRecipes()
+      getUserPreferences()
     }
   }, [session])
 
@@ -192,6 +193,29 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
 
     setRecipes(savedRecipes)
   }
+  async function getUserPreferences() {
+    const { data, error } = await supabase
+  .from("user_preferences")
+  .select("*")
+  .eq("user_id", session.user.id)
+  .maybeSingle()
+  if (error) {
+  console.error("Error loading preferences:", error)
+  return
+}
+if (data) {
+  console.log("LOADED PREFERENCES:", data)
+  
+  setOnboardingAnswers({
+    householdSize: data.household_size,
+    dietPreferences: data.diet_preferences || [],
+    allergies: data.allergies || "",
+    dislikedFoods: data.disliked_foods || "",
+    cookingStyle: data.cooking_style || ""
+  })
+}
+
+}
 async function uploadRecipeImage(file) {
   if (!file) return ""
 
