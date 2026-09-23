@@ -204,8 +204,8 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
   return
 }
 if (data) {
-  console.log("LOADED PREFERENCES:", data)
-  
+ 
+
   setOnboardingAnswers({
     householdSize: data.household_size,
     dietPreferences: data.diet_preferences || [],
