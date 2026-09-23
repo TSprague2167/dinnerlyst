@@ -41,7 +41,7 @@ const [onboardingStep, setOnboardingStep] = useState(() => {
   const completed = localStorage.getItem("onboardingComplete")
   return completed === "true" ? 0 : 1
 })
-const [householdSize, setHouseholdSize] = useState(2)
+
 
 const [onboardingAnswers, setOnboardingAnswers] = useState(() => {
   const saved = localStorage.getItem("onboardingAnswers")
@@ -673,6 +673,7 @@ const pantryMatches = recipes
     )
   }
   const saveOnboardingPreferences = async () => {
+    console.log("SAVING ONBOARDING:", onboardingAnswers)
   const { error } = await supabase
     .from("user_preferences")
     .insert({
@@ -700,17 +701,25 @@ const pantryMatches = recipes
 
         <div className="household-counter">
           <button
-            onClick={() =>
-              setHouseholdSize(Math.max(1, householdSize - 1))
-            }
+           onClick={() =>
+  setOnboardingAnswers({
+    ...onboardingAnswers,
+    householdSize: Math.max(1, onboardingAnswers.householdSize - 1)
+  })
+}
           >
             −
           </button>
 
-          <span>{householdSize}</span>
+         <span>{onboardingAnswers.householdSize}</span>
 
           <button
-            onClick={() => setHouseholdSize(householdSize + 1)}
+           onClick={() =>
+  setOnboardingAnswers({
+    ...onboardingAnswers,
+    householdSize: onboardingAnswers.householdSize + 1
+  })
+}
           >
             +
           </button>
