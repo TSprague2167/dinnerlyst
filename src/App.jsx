@@ -1062,6 +1062,9 @@ if (onboardingStep === 5) {
   <button onClick={() => setActiveTab("pantry")}>
     🥫 Pantry
   </button>
+  <button onClick={() => setActiveTab("preferences")}>
+  ⚙️ Preferences
+</button>
 </nav>
 
 
