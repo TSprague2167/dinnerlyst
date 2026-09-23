@@ -1748,6 +1748,12 @@ if (onboardingStep === 5) {
 )}
   </section>
 )}
+{activeTab === "preferences" && (
+  <section className="card">
+    <h2>⚙️ Preferences</h2>
+    <p>Your Dinnerlyst preferences will live here.</p>
+  </section>
+)}
       </main>
     </div>
   )
