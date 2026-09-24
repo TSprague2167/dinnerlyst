@@ -713,6 +713,21 @@ const pantryMatches = recipes
     console.error("Error saving preferences:", error)
   }
 }
+const updatePreferences = async () => {
+  const { error } = await supabase
+  .from("user_preferences")
+  .update({
+    household_size: onboardingAnswers.householdSize
+  })
+  .eq("user_id", session.user.id)
+  if (error) {
+  console.error("Error updating preferences:", error)
+  return
+}
+
+console.log("Preferences updated!")
+
+}
  if (onboardingStep === 1) {
   return (
     <div>
@@ -1780,7 +1795,10 @@ if (onboardingStep === 5) {
     </button>
   </div>
 </div>
-<button className="onboarding-continue">
+<button
+  className="onboarding-continue"
+  onClick={updatePreferences}
+>
   Save Preferences
 </button>
   </section>
