@@ -1817,6 +1817,97 @@ if (onboardingStep === 5) {
 >
   High Protein
 </button>
+<button
+  className={
+    onboardingAnswers.dietPreferences.includes("Anti-Inflammatory")
+      ? "diet-option selected"
+      : "diet-option"
+  }
+  onClick={() => {
+  const current = onboardingAnswers.dietPreferences
+
+  setOnboardingAnswers({
+    ...onboardingAnswers,
+    dietPreferences: current.includes("Anti-Inflammatory")
+      ? current.filter((item) => item !== "Anti-Inflammatory")
+      : [...current, "Anti-Inflammatory"]
+  })
+}}
+>
+  Anti-Inflammatory
+</button>
+<button
+  className={
+    onboardingAnswers.dietPreferences.includes("Vegetarian")
+      ? "diet-option selected"
+      : "diet-option"
+  }
+  onClick={() => {
+  const current = onboardingAnswers.dietPreferences
+
+  setOnboardingAnswers({
+    ...onboardingAnswers,
+    dietPreferences: current.includes("Vegetarian")
+      ? current.filter((item) => item !== "Vegetarian")
+      : [...current, "Vegetarian"]
+  })
+}}
+>
+  Vegetarian
+</button>
+<button
+  className={
+    onboardingAnswers.dietPreferences.includes("Vegan")
+      ? "diet-option selected"
+      : "diet-option"
+  }
+  onClick={() => {
+  const current = onboardingAnswers.dietPreferences
+
+  setOnboardingAnswers({
+    ...onboardingAnswers,
+    dietPreferences: current.includes("Vegan")
+      ? current.filter((item) => item !== "Vegan")
+      : [...current, "Vegan"]
+  })
+}}
+>
+  Vegan
+</button>
+<button
+  className={
+    onboardingAnswers.dietPreferences.includes("Gluten-Free")
+      ? "diet-option selected"
+      : "diet-option"
+  }
+  onClick={() => {
+  const current = onboardingAnswers.dietPreferences
+
+  setOnboardingAnswers({
+    ...onboardingAnswers,
+    dietPreferences: current.includes("Gluten-Free")
+      ? current.filter((item) => item !== "Gluten-Free")
+      : [...current, "Gluten-Free"]
+  })
+}}
+>
+  Gluten-Free
+</button>
+<button
+  className={
+    onboardingAnswers.dietPreferences.length === 0
+      ? "diet-option selected"
+      : "diet-option"
+  }
+  onClick={() => {
+  setOnboardingAnswers({
+    ...onboardingAnswers,
+    dietPreferences: []
+  })
+}}
+>
+  No Preference
+</button>
 </div>
 <button
   className="onboarding-continue"
