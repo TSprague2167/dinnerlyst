@@ -717,7 +717,8 @@ const updatePreferences = async () => {
   const { error } = await supabase
   .from("user_preferences")
   .update({
-    household_size: onboardingAnswers.householdSize
+    household_size: onboardingAnswers.householdSize,
+    diet_preferences: onboardingAnswers.dietPreferences
   })
   .eq("user_id", session.user.id)
   if (error) {
@@ -1795,9 +1796,32 @@ if (onboardingStep === 5) {
     </button>
   </div>
 </div>
+<div>
+  <p>Diet preferences</p>
+  <button
+  className={
+    onboardingAnswers.dietPreferences.includes("High Protein")
+      ? "diet-option selected"
+      : "diet-option"
+  }
+  onClick={() => {
+  const current = onboardingAnswers.dietPreferences
+
+  setOnboardingAnswers({
+    ...onboardingAnswers,
+    dietPreferences: current.includes("High Protein")
+      ? current.filter((item) => item !== "High Protein")
+      : [...current, "High Protein"]
+  })
+}}
+>
+  High Protein
+</button>
+</div>
 <button
   className="onboarding-continue"
   onClick={updatePreferences}
+
 >
   Save Preferences
 </button>
