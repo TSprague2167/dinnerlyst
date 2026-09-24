@@ -1751,7 +1751,38 @@ if (onboardingStep === 5) {
 {activeTab === "preferences" && (
   <section className="card">
     <h2>⚙️ Preferences</h2>
-    <p>Your Dinnerlyst preferences will live here.</p>
+ <div>
+  <p>Household size</p>
+
+  <div className="household-counter">
+    <button
+      onClick={() =>
+        setOnboardingAnswers({
+          ...onboardingAnswers,
+          householdSize: Math.max(1, onboardingAnswers.householdSize - 1)
+        })
+      }
+    >
+      −
+    </button>
+
+    <span>{onboardingAnswers.householdSize}</span>
+
+    <button
+      onClick={() =>
+        setOnboardingAnswers({
+          ...onboardingAnswers,
+          householdSize: onboardingAnswers.householdSize + 1
+        })
+      }
+    >
+      +
+    </button>
+  </div>
+</div>
+<button className="onboarding-continue">
+  Save Preferences
+</button>
   </section>
 )}
       </main>
