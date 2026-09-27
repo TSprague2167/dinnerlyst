@@ -720,7 +720,8 @@ const updatePreferences = async () => {
     household_size: onboardingAnswers.householdSize,
     diet_preferences: onboardingAnswers.dietPreferences,
     allergies: onboardingAnswers.allergies,
-    disliked_foods: onboardingAnswers.dislikedFoods
+    disliked_foods: onboardingAnswers.dislikedFoods,
+    cooking_style: onboardingAnswers.cookingStyle
   })
   .eq("user_id", session.user.id)
   if (error) {
@@ -1938,6 +1939,54 @@ if (onboardingStep === 5) {
   })
 }}
   />
+</div>
+<div>
+  <p>Cooking style</p>
+  <button
+  className={
+    onboardingAnswers.cookingStyle === "Quick & Easy"
+      ? "diet-option selected"
+      : "diet-option"
+  }
+  onClick={() =>
+  setOnboardingAnswers({
+    ...onboardingAnswers,
+    cookingStyle: "Quick & Easy"
+  })
+}
+>
+  ⚡ Quick & Easy
+</button>
+<button
+  className={
+    onboardingAnswers.cookingStyle === "Balanced"
+      ? "diet-option selected"
+      : "diet-option"
+  }
+  onClick={() =>
+  setOnboardingAnswers({
+    ...onboardingAnswers,
+    cookingStyle: "Balanced"
+  })
+}
+>
+  ⚖️ Balanced
+</button>
+<button
+  className={
+    onboardingAnswers.cookingStyle === "I Like to Cook"
+      ? "diet-option selected"
+      : "diet-option"
+  }
+  onClick={() =>
+  setOnboardingAnswers({
+    ...onboardingAnswers,
+    cookingStyle: "I Like to Cook"
+  })
+}
+>
+  👩‍🍳 I Like to Cook
+</button>
 </div>
 <button
   className="onboarding-continue"
