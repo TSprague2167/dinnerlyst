@@ -718,7 +718,8 @@ const updatePreferences = async () => {
   .from("user_preferences")
   .update({
     household_size: onboardingAnswers.householdSize,
-    diet_preferences: onboardingAnswers.dietPreferences
+    diet_preferences: onboardingAnswers.dietPreferences,
+    allergies: onboardingAnswers.allergies
   })
   .eq("user_id", session.user.id)
   if (error) {
@@ -1908,6 +1909,20 @@ if (onboardingStep === 5) {
 >
   No Preference
 </button>
+</div>
+<div className="onboarding-field">
+  <label>Allergies or restrictions</label>
+  <input
+    type="text"
+    placeholder="e.g. peanuts, shellfish, dairy"
+    value={onboardingAnswers.allergies}
+    onChange={(e) => {
+  setOnboardingAnswers({
+    ...onboardingAnswers,
+    allergies: e.target.value
+  })
+}}
+  />
 </div>
 <button
   className="onboarding-continue"
