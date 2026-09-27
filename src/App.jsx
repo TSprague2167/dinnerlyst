@@ -719,7 +719,8 @@ const updatePreferences = async () => {
   .update({
     household_size: onboardingAnswers.householdSize,
     diet_preferences: onboardingAnswers.dietPreferences,
-    allergies: onboardingAnswers.allergies
+    allergies: onboardingAnswers.allergies,
+    disliked_foods: onboardingAnswers.dislikedFoods
   })
   .eq("user_id", session.user.id)
   if (error) {
@@ -1920,6 +1921,20 @@ if (onboardingStep === 5) {
   setOnboardingAnswers({
     ...onboardingAnswers,
     allergies: e.target.value
+  })
+}}
+  />
+</div>
+<div className="onboarding-field">
+  <label>Foods we don't like</label>
+  <input
+    type="text"
+    placeholder="e.g. mushrooms, olives, seafood"
+    value={onboardingAnswers.dislikedFoods}
+    onChange={(e) => {
+  setOnboardingAnswers({
+    ...onboardingAnswers,
+    dislikedFoods: e.target.value
   })
 }}
   />
