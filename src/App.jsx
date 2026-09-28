@@ -1260,6 +1260,75 @@ if (onboardingStep === 5) {
 >
   🌱 Vegan
 </button>
+<button
+  type="button"
+  className={dietTags.includes("Gluten-Free") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setDietTags(
+      dietTags.includes("Gluten-Free")
+        ? dietTags.filter((tag) => tag !== "Gluten-Free")
+        : [...dietTags, "Gluten-Free"]
+    )
+  }
+>
+  🌾 Gluten-Free
+</button>
+
+<button
+  type="button"
+  className={dietTags.includes("Dairy-Free") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setDietTags(
+      dietTags.includes("Dairy-Free")
+        ? dietTags.filter((tag) => tag !== "Dairy-Free")
+        : [...dietTags, "Dairy-Free"]
+    )
+  }
+>
+  🥛 Dairy-Free
+</button>
+
+<button
+  type="button"
+  className={dietTags.includes("Low Carb") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setDietTags(
+      dietTags.includes("Low Carb")
+        ? dietTags.filter((tag) => tag !== "Low Carb")
+        : [...dietTags, "Low Carb"]
+    )
+  }
+>
+  🥩 Low Carb
+</button>
+
+<button
+  type="button"
+  className={dietTags.includes("Keto") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setDietTags(
+      dietTags.includes("Keto")
+        ? dietTags.filter((tag) => tag !== "Keto")
+        : [...dietTags, "Keto"]
+    )
+  }
+>
+  🥑 Keto
+</button>
+
+<button
+  type="button"
+  className={dietTags.includes("Mediterranean") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setDietTags(
+      dietTags.includes("Mediterranean")
+        ? dietTags.filter((tag) => tag !== "Mediterranean")
+        : [...dietTags, "Mediterranean"]
+    )
+  }
+>
+  🫒 Mediterranean
+</button>
 </div>
 </div>
 
