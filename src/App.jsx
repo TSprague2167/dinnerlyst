@@ -1221,6 +1221,19 @@ if (onboardingStep === 5) {
 >
   💪 High Protein
 </button>
+<button
+  type="button"
+  className={dietTags.includes("Anti-Inflammatory") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setDietTags(
+      dietTags.includes("Anti-Inflammatory")
+        ? dietTags.filter((tag) => tag !== "Anti-Inflammatory")
+        : [...dietTags, "Anti-Inflammatory"]
+    )
+  }
+>
+  🌿 Anti-Inflammatory
+</button>
 </div>
 </div>
 
