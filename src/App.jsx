@@ -395,6 +395,7 @@ function toggleDayLock(day) {
     const randomMeals = []
     const usedRecipeIds = new Set()
     if (recipes.length === 0) return
+    const preferredDietTags = onboardingAnswers.dietPreferences || []
 
     const meals = daysOfWeek.map((day) => {
 
@@ -411,8 +412,18 @@ function toggleDayLock(day) {
   (recipe) => !usedRecipeIds.has(recipe.id)
 )
 
+const matchingRecipes = availableRecipes.filter((recipe) =>
+  preferredDietTags.some((tag) =>
+    (recipe.diet_tags || []).includes(tag)
+  )
+)
+
 const recipePool =
-  availableRecipes.length > 0 ? availableRecipes : recipes
+  preferredDietTags.length > 0 && matchingRecipes.length > 0
+    ? matchingRecipes
+    : availableRecipes.length > 0
+      ? availableRecipes
+      : recipes
 
 const randomIndex = Math.floor(
   Math.random() * recipePool.length
