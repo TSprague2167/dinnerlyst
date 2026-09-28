@@ -419,7 +419,7 @@ const matchingRecipes = availableRecipes.filter((recipe) =>
 )
 
 const recipePool =
-  preferredDietTags.length > 0 && matchingRecipes.length > 0
+  matchingRecipes.length > 0
     ? matchingRecipes
     : availableRecipes.length > 0
       ? availableRecipes
