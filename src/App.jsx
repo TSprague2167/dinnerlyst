@@ -1234,6 +1234,32 @@ if (onboardingStep === 5) {
 >
   🌿 Anti-Inflammatory
 </button>
+<button
+  type="button"
+  className={dietTags.includes("Vegetarian") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setDietTags(
+      dietTags.includes("Vegetarian")
+        ? dietTags.filter((tag) => tag !== "Vegetarian")
+        : [...dietTags, "Vegetarian"]
+    )
+  }
+>
+  🥕 Vegetarian
+</button>
+<button
+  type="button"
+  className={dietTags.includes("Vegan") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setDietTags(
+      dietTags.includes("Vegan")
+        ? dietTags.filter((tag) => tag !== "Vegan")
+        : [...dietTags, "Vegan"]
+    )
+  }
+>
+  🌱 Vegan
+</button>
 </div>
 </div>
 
