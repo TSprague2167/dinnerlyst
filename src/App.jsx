@@ -11,6 +11,7 @@ function App() {
   const [recipeName, setRecipeName] = useState("")
   const [ingredients, setIngredients] = useState("")
   const [instructions, setInstructions] = useState("")
+  const [dietTags, setDietTags] = useState([])
   const [viewingRecipe, setViewingRecipe] = useState(null)
   const [swapOptions, setSwapOptions] = useState(null)
   const [touchStartX, setTouchStartX] = useState(null)
@@ -151,6 +152,7 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
   id: recipe.id,
   name: recipe.name,
   categories: recipe.categories || [],
+  diet_tags: recipe.diet_tags || [],
   image_url: recipe.image_url || "",
   instructions: recipe.instructions || "",
  ingredients: (() => {
@@ -323,6 +325,7 @@ if (editingRecipeId) {
       instructions,
       categories: selectedCategories,
       image_url: uploadedImageUrl,
+      diet_tags: dietTags,
     })
     .eq('id', (editingRecipeId))
 
@@ -343,7 +346,8 @@ if (editingRecipeId) {
         instructions,
         categories: selectedCategories,
         image_url: uploadedImageUrl,
-        user_id: session.user.id
+        user_id: session.user.id,
+        diet_tags: dietTags
       }
     ])
     .select()
@@ -1202,6 +1206,22 @@ if (onboardingStep === 5) {
       rows="6"
     />
   </div>
+  <div className="recipe-field">
+  <label>Dietary tags</label>
+  <button
+  type="button"
+  className={dietTags.includes("High Protein") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setDietTags(
+      dietTags.includes("High Protein")
+        ? dietTags.filter((tag) => tag !== "High Protein")
+        : [...dietTags, "High Protein"]
+    )
+  }
+>
+  💪 High Protein
+</button>
+</div>
 </div>
 
 <button
@@ -1335,6 +1355,7 @@ if (onboardingStep === 5) {
                 setRecipeName(recipe.name)
                 setIngredients(recipe.ingredients.join(", "))
                 setInstructions(recipe.instructions || "")
+                setDietTags(recipe.diet_tags || [])
                 setEditingRecipeId(recipe.id)
               }}
             >
