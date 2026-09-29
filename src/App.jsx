@@ -511,14 +511,24 @@ const options = recipes
     )
 
     if (availableRecipes.length === 0) return item
+    const preferredDietTags = onboardingAnswers.dietPreferences || []
+
+const matchingRecipes = availableRecipes.filter((recipe) =>
+  preferredDietTags.some((tag) =>
+    (recipe.diet_tags || []).includes(tag)
+  )
+)
+
+const recipePool =
+  matchingRecipes.length > 0 ? matchingRecipes : availableRecipes
 
     const randomIndex = Math.floor(
-      Math.random() * availableRecipes.length
+      Math.random() * recipePool.length
     )
 
     return {
       day: item.day,
-      meal: availableRecipes[randomIndex]
+      meal: recipePool[randomIndex]
     }
   }
 
