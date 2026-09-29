@@ -413,10 +413,11 @@ function toggleDayLock(day) {
 )
 
 const matchingRecipes = availableRecipes.filter((recipe) =>
-  preferredDietTags.some((tag) =>
+  preferredDietTags.every((tag) =>
     (recipe.diet_tags || []).includes(tag)
   )
 )
+
 
 const recipePool =
   matchingRecipes.length > 0
@@ -514,7 +515,7 @@ const options = recipes
     const preferredDietTags = onboardingAnswers.dietPreferences || []
 
 const matchingRecipes = availableRecipes.filter((recipe) =>
-  preferredDietTags.some((tag) =>
+  preferredDietTags.every((tag) =>
     (recipe.diet_tags || []).includes(tag)
   )
 )
