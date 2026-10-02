@@ -52,7 +52,7 @@ const [onboardingAnswers, setOnboardingAnswers] = useState(() => {
     : {
         householdSize: 2,
         dietPreferences: [],
-        allergies: "",
+        allergies: [],
         dislikedFoods: "",
         cookingStyle: ""
       }
@@ -211,7 +211,7 @@ if (data) {
   setOnboardingAnswers({
     householdSize: data.household_size,
     dietPreferences: data.diet_preferences || [],
-    allergies: data.allergies || "",
+    allergies: data.allergies || [],
     dislikedFoods: data.disliked_foods || "",
     cookingStyle: data.cooking_style || ""
   })
@@ -948,14 +948,42 @@ if (onboardingStep === 3) {
         </p>
         <div className="onboarding-field">
   <label>Allergies or restrictions</label>
+  <button
+  type="button"
+  className={onboardingAnswers.allergies.includes("Gluten-Free") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setOnboardingAnswers({
+      ...onboardingAnswers,
+      allergies: onboardingAnswers.allergies.includes("Gluten-Free")
+        ? onboardingAnswers.allergies.filter((item) => item !== "Gluten-Free")
+        : [...onboardingAnswers.allergies, "Gluten-Free"]
+    })
+  }
+>
+  🌾 Gluten-Free
+</button>
+<button
+  type="button"
+  className={onboardingAnswers.allergies.includes("Dairy-Free") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setOnboardingAnswers({
+      ...onboardingAnswers,
+      allergies: onboardingAnswers.allergies.includes("Dairy-Free")
+        ? onboardingAnswers.allergies.filter((item) => item !== "Dairy-Free")
+        : [...onboardingAnswers.allergies, "Dairy-Free"]
+    })
+  }
+>
+  🥛 Dairy-Free
+</button>
   <input
     type="text"
     placeholder="e.g. peanuts, shellfish, dairy"
-    value={onboardingAnswers.allergies}
+    value={onboardingAnswers.allergies.join(", ")}
     onChange={(e) =>
       setOnboardingAnswers({
         ...onboardingAnswers,
-        allergies: e.target.value
+        allergies: e.target.value.split(",").map((item) => item.trim())
       })
     }
   />
@@ -2068,11 +2096,11 @@ if (onboardingStep === 5) {
   <input
     type="text"
     placeholder="e.g. peanuts, shellfish, dairy"
-    value={onboardingAnswers.allergies}
+    value={onboardingAnswers.allergies.join(", ")}
     onChange={(e) => {
   setOnboardingAnswers({
     ...onboardingAnswers,
-    allergies: e.target.value
+    allergies: e.target.value.split(",").map((item) => item.trim())
   })
 }}
   />
