@@ -396,6 +396,10 @@ function toggleDayLock(day) {
     const usedRecipeIds = new Set()
     if (recipes.length === 0) return
     const preferredDietTags = onboardingAnswers.dietPreferences || []
+    const allergyRestrictions = onboardingAnswers.allergies || []
+    const requiredAllergyTags = allergyRestrictions.filter((allergy) =>
+  ["Peanut-Free", "Tree Nut-Free", "Shellfish-Free", "Egg-Free", "Soy-Free"].includes(allergy)
+)
 
     const meals = daysOfWeek.map((day) => {
 
@@ -411,20 +415,21 @@ function toggleDayLock(day) {
   const availableRecipes = recipes.filter(
   (recipe) => !usedRecipeIds.has(recipe.id)
 )
+const allergySafeRecipes = availableRecipes.filter((recipe) =>
+  requiredAllergyTags.every((tag) =>
+    (recipe.diet_tags || []).includes(tag)
+  )
+)
 
-const matchingRecipes = availableRecipes.filter((recipe) =>
+const matchingRecipes = allergySafeRecipes.filter((recipe) =>
   preferredDietTags.every((tag) =>
     (recipe.diet_tags || []).includes(tag)
   )
 )
 
 
-const recipePool =
-  matchingRecipes.length > 0
-    ? matchingRecipes
-    : availableRecipes.length > 0
-      ? availableRecipes
-      : recipes
+const recipePool = matchingRecipes
+if (recipePool.length === 0) return { day, meal: null }
 
 const randomIndex = Math.floor(
   Math.random() * recipePool.length
@@ -1393,6 +1398,75 @@ if (onboardingStep === 5) {
 >
   🫒 Mediterranean
 </button>
+<button
+  type="button"
+  className={dietTags.includes("Peanut-Free") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setDietTags(
+      dietTags.includes("Peanut-Free")
+        ? dietTags.filter((tag) => tag !== "Peanut-Free")
+        : [...dietTags, "Peanut-Free"]
+    )
+  }
+>
+  🥜 Peanut-Free
+</button>
+
+<button
+  type="button"
+  className={dietTags.includes("Tree Nut-Free") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setDietTags(
+      dietTags.includes("Tree Nut-Free")
+        ? dietTags.filter((tag) => tag !== "Tree Nut-Free")
+        : [...dietTags, "Tree Nut-Free"]
+    )
+  }
+>
+  🌰 Tree Nut-Free
+</button>
+
+<button
+  type="button"
+  className={dietTags.includes("Shellfish-Free") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setDietTags(
+      dietTags.includes("Shellfish-Free")
+        ? dietTags.filter((tag) => tag !== "Shellfish-Free")
+        : [...dietTags, "Shellfish-Free"]
+    )
+  }
+>
+  🦐 Shellfish-Free
+</button>
+
+<button
+  type="button"
+  className={dietTags.includes("Egg-Free") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setDietTags(
+      dietTags.includes("Egg-Free")
+        ? dietTags.filter((tag) => tag !== "Egg-Free")
+        : [...dietTags, "Egg-Free"]
+    )
+  }
+>
+  🥚 Egg-Free
+</button>
+
+<button
+  type="button"
+  className={dietTags.includes("Soy-Free") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setDietTags(
+      dietTags.includes("Soy-Free")
+        ? dietTags.filter((tag) => tag !== "Soy-Free")
+        : [...dietTags, "Soy-Free"]
+    )
+  }
+>
+  🌱 Soy-Free
+</button>
 </div>
 </div>
 
@@ -1631,7 +1705,7 @@ if (onboardingStep === 5) {
           {weeklyMeals.length === 0 && <p className="empty">Generate meals to see your week.</p>}
           <div className="meal-grid">
 
-          {weeklyMeals.map((item, index) => (
+          {weeklyMeals.map((item, index) => item.meal ? (
             <div
   className="meal-card"
   key={index}
@@ -1685,7 +1759,14 @@ if (onboardingStep === 5) {
     </button>
   </div>
 </div>
-          ))}
+          ) : (
+  <div className="meal-card" key={index}>
+    <div className="meal-info">
+      <span className="meal-day">{item.day}</span>
+      <p>No matching meal found</p>
+    </div>
+  </div>
+))}
           </div>
           {viewingRecipe && (
   <div className="recipe-modal-overlay">
