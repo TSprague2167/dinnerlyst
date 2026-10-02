@@ -1077,3 +1077,29 @@ select:focus {
 .meal-card-locked:hover {
   box-shadow: 0 12px 26px rgba(85, 98, 77, 0.16);
 }
+
+.meal-actions .small-button {
+  background: #f7f9f5;
+  border: 1px solid #d7dfd2;
+  border-radius: 10px;
+  color: #586653;
+  box-shadow: 0 2px 6px rgba(85, 98, 77, 0.05);
+}
+
+.meal-actions .small-button:hover {
+  background: #edf2e9;
+  border-color: #bccab5;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(85, 98, 77, 0.10);
+}
+
+.meal-card-locked .meal-actions .small-button:last-child {
+  background: #dfe8da;
+  border-color: #aebfa6;
+  color: #4f6149;
+}
+
+.meal-card-locked .meal-actions .small-button:last-child:hover {
+  background: #d4e0ce;
+  border-color: #9caf93;
+}
