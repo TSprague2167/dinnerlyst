@@ -518,15 +518,19 @@ const options = recipes
 
     if (availableRecipes.length === 0) return item
     const preferredDietTags = onboardingAnswers.dietPreferences || []
+    const allergyRestrictions = onboardingAnswers.allergies || []
 
 const matchingRecipes = availableRecipes.filter((recipe) =>
   preferredDietTags.every((tag) =>
     (recipe.diet_tags || []).includes(tag)
+  ) &&
+  allergyRestrictions.every((allergy) =>
+    (recipe.diet_tags || []).includes(allergy)
   )
 )
 
-const recipePool =
-  matchingRecipes.length > 0 ? matchingRecipes : availableRecipes
+const recipePool = matchingRecipes
+if (recipePool.length === 0) return item
 
     const randomIndex = Math.floor(
       Math.random() * recipePool.length
