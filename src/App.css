@@ -1060,3 +1060,18 @@ select:focus {
 .meal-card:hover .meal-image {
   transform: scale(1.025);
 }
+
+.meal-card-locked {
+  background: #f4f7f1;
+  border: 2px solid #9eaf96;
+  box-shadow: 0 8px 20px rgba(85, 98, 77, 0.12);
+}
+
+.meal-card-locked .meal-day::after {
+  content: "  🔒";
+  font-size: 13px;
+}
+
+.meal-card-locked:hover {
+  box-shadow: 0 12px 26px rgba(85, 98, 77, 0.16);
+}

@@ -1711,7 +1711,7 @@ if (onboardingStep === 5) {
 
           {weeklyMeals.map((item, index) => item.meal ? (
             <div
-  className="meal-card"
+  className={`meal-card ${lockedDays.includes(item.day) ? "meal-card-locked" : ""}`}
   key={index}
   style={{
   transform:
