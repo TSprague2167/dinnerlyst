@@ -1681,7 +1681,11 @@ if (onboardingStep === 5) {
     ))}
   </div>
 ) : (
+  pantryMatches[0] ? (
   <p>✅ You have everything you need!</p>
+) : (
+  <p>Add a few pantry items and I’ll find your best match.</p>
+)
 )}
   {pantryMatches[0]?.missingIngredients?.length > 0 && (
   <button
@@ -2013,7 +2017,11 @@ if (onboardingStep === 5) {
   .filter((recipe) => recipe.matchedCount > 0)
   .sort((a, b) => b.matchedCount - a.matchedCount)
   .map((recipe) => (
-    <div key={recipe.id} className="recipe-card">
+    <div
+  key={recipe.id}
+  className="pantry-match-card"
+  onClick={() => setViewingRecipe(recipe)}
+>
       <strong>{recipe.name}</strong>
       <p>
   ✅ {recipe.matchedCount} of {recipe.totalCount} ingredients available
