@@ -2105,10 +2105,22 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
   <span key={item} className="category-pill">
     {item}
     <button
-      onClick={() =>
-        setPantryItems(
-          pantryItems.filter((pantryItem) => pantryItem !== item)
-        )
+      onClick={async () =>
+       {
+  const { error } = await supabase
+    .from("pantry_items")
+    .delete()
+    .eq("user_id", session.user.id)
+    .eq("item_name", item)
+
+  if (!error) {
+    setPantryItems(
+      pantryItems.filter((pantryItem) => pantryItem !== item)
+    )
+  } else {
+    console.error("Error deleting pantry item:", error)
+  }
+}
       }
     >
       ✕
