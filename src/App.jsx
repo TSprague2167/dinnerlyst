@@ -1698,12 +1698,14 @@ if (onboardingStep === 5) {
   </button>
 )}
 
-<button
-  className="cook-button"
-  onClick={() => cookTonight(pantryMatches[0])}
->
-  Cook Tonight
-</button>
+{pantryMatches[0]?.missingIngredients?.length === 0 && (
+  <button
+    className="cook-button"
+    onClick={() => cookTonight(pantryMatches[0])}
+  >
+    Cook Tonight
+  </button>
+)}
 </div>
   <div className="section-header">
   <h2>This Week</h2>
