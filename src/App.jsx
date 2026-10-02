@@ -976,6 +976,20 @@ if (onboardingStep === 3) {
 >
   🥛 Dairy-Free
 </button>
+<button
+  type="button"
+  className={onboardingAnswers.allergies.includes("Peanut-Free") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setOnboardingAnswers({
+      ...onboardingAnswers,
+      allergies: onboardingAnswers.allergies.includes("Peanut-Free")
+        ? onboardingAnswers.allergies.filter((item) => item !== "Peanut-Free")
+        : [...onboardingAnswers.allergies, "Peanut-Free"]
+    })
+  }
+>
+  🥜 Peanut-Free
+</button>
   <input
     type="text"
     placeholder="e.g. peanuts, shellfish, dairy"
@@ -2093,6 +2107,77 @@ if (onboardingStep === 5) {
 </div>
 <div className="onboarding-field">
   <label>Allergies or restrictions</label>
+  <button
+  type="button"
+  className={onboardingAnswers.allergies.includes("Peanut-Free") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setOnboardingAnswers({
+      ...onboardingAnswers,
+      allergies: onboardingAnswers.allergies.includes("Peanut-Free")
+        ? onboardingAnswers.allergies.filter((item) => item !== "Peanut-Free")
+        : [...onboardingAnswers.allergies, "Peanut-Free"]
+    })
+  }
+>
+  🥜 Peanut-Free
+</button>
+<button
+  type="button"
+  className={onboardingAnswers.allergies.includes("Tree Nut-Free") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setOnboardingAnswers({
+      ...onboardingAnswers,
+      allergies: onboardingAnswers.allergies.includes("Tree Nut-Free")
+        ? onboardingAnswers.allergies.filter((item) => item !== "Tree Nut-Free")
+        : [...onboardingAnswers.allergies, "Tree Nut-Free"]
+    })
+  }
+>
+  🌰 Tree Nut-Free
+</button>
+<button
+  type="button"
+  className={onboardingAnswers.allergies.includes("Shellfish-Free") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setOnboardingAnswers({
+      ...onboardingAnswers,
+      allergies: onboardingAnswers.allergies.includes("Shellfish-Free")
+        ? onboardingAnswers.allergies.filter((item) => item !== "Shellfish-Free")
+        : [...onboardingAnswers.allergies, "Shellfish-Free"]
+    })
+  }
+>
+  🦐 Shellfish-Free
+</button>
+<button
+  type="button"
+  className={onboardingAnswers.allergies.includes("Egg-Free") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setOnboardingAnswers({
+      ...onboardingAnswers,
+      allergies: onboardingAnswers.allergies.includes("Egg-Free")
+        ? onboardingAnswers.allergies.filter((item) => item !== "Egg-Free")
+        : [...onboardingAnswers.allergies, "Egg-Free"]
+    })
+  }
+>
+  🥚 Egg-Free
+</button>
+
+<button
+  type="button"
+  className={onboardingAnswers.allergies.includes("Soy-Free") ? "diet-option selected" : "diet-option"}
+  onClick={() =>
+    setOnboardingAnswers({
+      ...onboardingAnswers,
+      allergies: onboardingAnswers.allergies.includes("Soy-Free")
+        ? onboardingAnswers.allergies.filter((item) => item !== "Soy-Free")
+        : [...onboardingAnswers.allergies, "Soy-Free"]
+    })
+  }
+>
+  🌱 Soy-Free
+</button>
   <input
     type="text"
     placeholder="e.g. peanuts, shellfish, dairy"
