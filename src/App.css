@@ -1024,3 +1024,22 @@ select:focus {
   border-color: #94a58b;
   transform: scale(1.05);
 }
+
+.meal-diet-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin: 6px 10px 4px;
+}
+
+.meal-diet-tag {
+  background: #eef2ea;
+  color: #65765e;
+  border: 1px solid #d8e0d3;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}

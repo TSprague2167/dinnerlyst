@@ -1747,6 +1747,15 @@ if (onboardingStep === 5) {
 >
   {item.meal.name}
 </button>
+{item.meal.diet_tags?.length > 0 && (
+  <div className="meal-diet-tags">
+    {item.meal.diet_tags.map((tag) => (
+      <span key={tag} className="meal-diet-tag">
+        {tag}
+      </span>
+    ))}
+  </div>
+)}
   </div>
 
   <div className="meal-actions">
