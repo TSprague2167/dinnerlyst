@@ -1765,8 +1765,7 @@ if (onboardingStep === 5) {
 
     <button
       className="small-button"
-      onClick={() => toggle
-        (item.day)}
+      onClick={() => toggleDayLock(item.day)}
     >
       {lockedDays.includes(item.day) ? "Unlock" : "Lock"}
     </button>
