@@ -88,6 +88,28 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
       listener.subscription.unsubscribe()
     }
   }, [])
+  useEffect(() => {
+  async function loadPantryItems() {
+    if (!session?.user?.id) {
+      setPantryItems([])
+      return
+    }
+
+    const { data, error } = await supabase
+      .from("pantry_items")
+      .select("item_name")
+      .eq("user_id", session.user.id)
+
+    if (error) {
+      console.error("Error loading pantry items:", error)
+      return
+    }
+
+    setPantryItems((data || []).map((item) => item.item_name))
+  }
+
+  loadPantryItems()
+}, [session])
 
   useEffect(() => {
   localStorage.setItem(
@@ -1962,13 +1984,24 @@ if (onboardingStep === 5) {
   placeholder="Search ingredients..."
   value={pantrySearch}
   onChange={(e) => setPantrySearch(e.target.value)}
- onKeyDown={(e) => {
+ onKeyDown={async (e) => {
   if (e.key === "Enter" && pantrySearch.trim()) {
     const newItem = pantrySearch.trim()
 
-    if (!pantryItems.includes(newItem)) {
-      setPantryItems([...pantryItems, newItem])
-    }
+if (!pantryItems.includes(newItem) && session?.user?.id) {
+  const { error } = await supabase
+    .from("pantry_items")
+    .insert({
+      user_id: session.user.id,
+      item_name: newItem
+    })
+
+  if (!error) {
+    setPantryItems([...pantryItems, newItem])
+  } else {
+    console.error("Error saving pantry item:", error)
+  }
+}
 
     setPantrySearch("")
   }
