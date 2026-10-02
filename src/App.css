@@ -1043,3 +1043,20 @@ select:focus {
   font-weight: 600;
   line-height: 1.2;
 }
+
+.meal-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.meal-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 30px rgba(85, 98, 77, 0.09);
+}
+
+.meal-image {
+  transition: transform 0.3s ease;
+}
+
+.meal-card:hover .meal-image {
+  transform: scale(1.025);
+}
