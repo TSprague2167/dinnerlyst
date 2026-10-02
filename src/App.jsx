@@ -1957,11 +1957,22 @@ if (onboardingStep === 5) {
         {activeTab === "pantry" && (
   <section className="card">
     <h2>🥫 Pantry</h2>
- <input
+    <input
   type="text"
   placeholder="Search ingredients..."
   value={pantrySearch}
   onChange={(e) => setPantrySearch(e.target.value)}
+ onKeyDown={(e) => {
+  if (e.key === "Enter" && pantrySearch.trim()) {
+    const newItem = pantrySearch.trim()
+
+    if (!pantryItems.includes(newItem)) {
+      setPantryItems([...pantryItems, newItem])
+    }
+
+    setPantrySearch("")
+  }
+}}
 />
 {[
   "Chicken",
