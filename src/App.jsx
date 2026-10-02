@@ -2023,10 +2023,21 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
 ).map((item) => (
   <button
     key={item}
-    onClick={() => {
-      if (!pantryItems.includes(item)) {
-        setPantryItems([...pantryItems, item])
-      }
+    onClick={async () => {
+     if (!pantryItems.includes(item) && session?.user?.id) {
+  const { error } = await supabase
+    .from("pantry_items")
+    .insert({
+      user_id: session.user.id,
+      item_name: item
+    })
+
+  if (!error) {
+    setPantryItems([...pantryItems, item])
+  } else {
+    console.error("Error saving pantry item:", error)
+  }
+}
       setPantrySearch("")
     }}
   >
