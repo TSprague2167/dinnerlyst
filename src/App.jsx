@@ -2095,6 +2095,14 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
     </ul>
   </>
 )}
+{recipe.missingIngredients.length > 0 && (
+  <button
+    className="cook-button"
+    onClick={() => addMissingToShoppingList(recipe.missingIngredients)}
+  >
+    🛒 Add Missing to Shopping List
+  </button>
+)}
     </div>
   ))}
 
