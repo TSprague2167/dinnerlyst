@@ -34,10 +34,7 @@ function App() {
   const saved = localStorage.getItem("shoppingList")
   return saved ? JSON.parse(saved) : []
 })
-  const [checkedShoppingItems, setCheckedShoppingItems] = useState(() => {
-  const saved = localStorage.getItem("checkedShoppingItems")
-  return saved ? JSON.parse(saved) : []
-})
+ const [checkedShoppingItems, setCheckedShoppingItems] = useState([])
 const [onboardingStep, setOnboardingStep] = useState(() => {
   const completed = localStorage.getItem("onboardingComplete")
   return completed === "true" ? 0 : 1
@@ -57,12 +54,7 @@ const [onboardingAnswers, setOnboardingAnswers] = useState(() => {
         cookingStyle: ""
       }
 })
-useEffect(() => {
-  localStorage.setItem(
-    "checkedShoppingItems",
-    JSON.stringify(checkedShoppingItems)
-  )
-}, [checkedShoppingItems])
+
 useEffect(() => {
   localStorage.setItem(
     "shoppingList",
@@ -109,6 +101,30 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
   }
 
   loadPantryItems()
+}, [session])
+useEffect(() => {
+  async function loadCheckedShoppingItems() {
+    if (!session?.user?.id) {
+      setCheckedShoppingItems([])
+      return
+    }
+
+    const { data, error } = await supabase
+      .from("checked_shopping_items")
+      .select("item_name")
+      .eq("user_id", session.user.id)
+
+    if (error) {
+      console.error("Error loading checked shopping items:", error)
+      return
+    }
+
+    setCheckedShoppingItems(
+      (data || []).map((item) => item.item_name)
+    )
+  }
+
+  loadCheckedShoppingItems()
 }, [session])
 
   useEffect(() => {
@@ -1960,13 +1976,34 @@ localStorage.setItem("onboardingAnswers", JSON.stringify(onboardingAnswers))
   <input
   type="checkbox"
   checked={checkedShoppingItems.includes(ingredient)}
-  onChange={(e) => {
+  onChange={async (e) => {
     if (e.target.checked) {
+      const { error } = await supabase
+  .from("checked_shopping_items")
+  .insert({
+    user_id: session.user.id,
+    item_name: ingredient,
+  })
+
+if (error) {
+  console.error("Error saving checked item:", error)
+  return
+}
       setCheckedShoppingItems([
         ...checkedShoppingItems,
         ingredient
       ])
     } else {
+      const { error } = await supabase
+  .from("checked_shopping_items")
+  .delete()
+  .eq("user_id", session.user.id)
+  .eq("item_name", ingredient)
+
+if (error) {
+  console.error("Error removing checked item:", error)
+  return
+}
       setCheckedShoppingItems(
         checkedShoppingItems.filter((item) => item !== ingredient)
       )
