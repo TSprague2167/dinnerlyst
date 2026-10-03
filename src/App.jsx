@@ -164,7 +164,7 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
 
   async function getRecipes() {
     const { data, error } = await supabase.from('recipes').select('*')
-.eq('user_id', session.user.id)
+ .or(`user_id.eq.${session.user.id},user_id.is.null`)
     if (error) {
       console.log(error)
       return
@@ -597,7 +597,7 @@ function cookTonight(recipe) {
   createShoppingList(updatedMeals)
 }
 function createShoppingList(meals) {
-  const allIngredients = meals.flatMap((item) => item.meal.ingredients)
+  const allIngredients = meals.flatMap((item) => item.meal?.ingredients || [])
 
   const ingredientCounts = {}
 
