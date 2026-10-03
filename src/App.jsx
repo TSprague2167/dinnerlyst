@@ -555,15 +555,31 @@ const options = recipes
     )
 
     if (availableRecipes.length === 0) return item
-    const preferredDietTags = onboardingAnswers.dietPreferences || []
-    const allergyRestrictions = onboardingAnswers.allergies || []
+const preferredDietTags = onboardingAnswers.dietPreferences || []
 
-const matchingRecipes = availableRecipes.filter((recipe) =>
+const allergyTagMap = {
+  "Peanuts": "Peanut-Free",
+  "Tree Nuts": "Tree Nut-Free",
+  "Shellfish": "Shellfish-Free",
+  "Eggs": "Egg-Free",
+  "Soy": "Soy-Free",
+  "Dairy": "Dairy-Free",
+  "Gluten": "Gluten-Free",
+}
+
+const requiredAllergyTags = (onboardingAnswers.allergies || [])
+  .map((allergy) => allergyTagMap[allergy])
+  .filter(Boolean)
+
+const allergySafeRecipes = availableRecipes.filter((recipe) =>
+  requiredAllergyTags.every((tag) =>
+    (recipe.diet_tags || []).includes(tag)
+  )
+)
+
+const matchingRecipes = allergySafeRecipes.filter((recipe) =>
   preferredDietTags.every((tag) =>
     (recipe.diet_tags || []).includes(tag)
-  ) &&
-  allergyRestrictions.every((allergy) =>
-    (recipe.diet_tags || []).includes(allergy)
   )
 )
 
