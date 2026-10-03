@@ -761,14 +761,17 @@ const pantryMatches = recipes
       user_id: session.user.id,
       household_size: onboardingAnswers.householdSize,
       diet_preferences: onboardingAnswers.dietPreferences,
-      allergies: onboardingAnswers.allergies,
+      allergies: onboardingAnswers.allergies.filter(Boolean),
       disliked_foods: onboardingAnswers.dislikedFoods,
       cooking_style: onboardingAnswers.cookingStyle
     })
 
-  if (error) {
-    console.error("Error saving preferences:", error)
-  }
+ if (error) {
+  console.error("Error saving preferences:", error)
+  return false
+}
+
+return true
 }
 const updatePreferences = async () => {
   const { error } = await supabase
@@ -776,7 +779,7 @@ const updatePreferences = async () => {
   .update({
     household_size: onboardingAnswers.householdSize,
     diet_preferences: onboardingAnswers.dietPreferences,
-    allergies: onboardingAnswers.allergies,
+   allergies: onboardingAnswers.allergies.filter(Boolean),
     disliked_foods: onboardingAnswers.dislikedFoods,
     cooking_style: onboardingAnswers.cookingStyle
   })
@@ -1137,8 +1140,11 @@ if (onboardingStep === 5) {
         <button
   className="onboarding-continue"
  onClick={async () => {
-  await saveOnboardingPreferences()
-    localStorage.setItem("onboardingAnswers", JSON.stringify(onboardingAnswers))
+const saved = await saveOnboardingPreferences()
+
+if (!saved) return
+
+localStorage.setItem("onboardingAnswers", JSON.stringify(onboardingAnswers))
     localStorage.setItem("onboardingComplete", "true")
     setOnboardingStep(0)
   }}
@@ -2363,7 +2369,7 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
     onChange={(e) => {
   setOnboardingAnswers({
     ...onboardingAnswers,
-    allergies: e.target.value.split(",").map((item) => item.trim())
+   allergies: e.target.value.split(",").map((item) => item.trim()).filter(Boolean)
   })
 }}
   />
