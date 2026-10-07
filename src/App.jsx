@@ -4,6 +4,15 @@ import './App.css'
 import { emptyIngredientRow, getIngredientRows, formatIngredient, rowsFromIngredientStrings, validateIngredientRows } from './ingredients'
 
 
+const allergySafeTags = [
+  "Peanut-Free", "Tree Nut-Free", "Shellfish-Free", "Egg-Free",
+  "Soy-Free", "Dairy-Free", "Gluten-Free",
+]
+
+function getRequiredAllergyTags(allergies = []) {
+  return allergies.filter((tag) => allergySafeTags.includes(tag))
+}
+
 function App() {
   const [session, setSession] = useState(null)
   const [authEmail, setAuthEmail] = useState("")
@@ -373,13 +382,14 @@ function toggleDayLock(day) {
 }
   function generateWeeklyMeals() {
     const randomMeals = []
-    const usedRecipeIds = new Set()
+    const usedRecipeIds = new Set(
+      weeklyMeals
+        .filter((item) => lockedDays.includes(item.day) && item.meal)
+        .map((item) => item.meal.id)
+    )
     if (recipes.length === 0) return
     const preferredDietTags = onboardingAnswers.dietPreferences || []
-    const allergyRestrictions = onboardingAnswers.allergies || []
-    const requiredAllergyTags = allergyRestrictions.filter((allergy) =>
-  ["Peanut-Free", "Tree Nut-Free", "Shellfish-Free", "Egg-Free", "Soy-Free"].includes(allergy)
-)
+    const requiredAllergyTags = getRequiredAllergyTags(onboardingAnswers.allergies)
 
     const meals = daysOfWeek.map((day) => {
 
@@ -388,7 +398,6 @@ function toggleDayLock(day) {
   )
 
   if (lockedDays.includes(day) && existingMeal) {
-  usedRecipeIds.add(existingMeal.meal.id)
   return existingMeal
 }
 
@@ -499,19 +508,7 @@ const options = recipes
     if (availableRecipes.length === 0) return item
 const preferredDietTags = onboardingAnswers.dietPreferences || []
 
-const allergyTagMap = {
-  "Peanuts": "Peanut-Free",
-  "Tree Nuts": "Tree Nut-Free",
-  "Shellfish": "Shellfish-Free",
-  "Eggs": "Egg-Free",
-  "Soy": "Soy-Free",
-  "Dairy": "Dairy-Free",
-  "Gluten": "Gluten-Free",
-}
-
-const requiredAllergyTags = (onboardingAnswers.allergies || [])
-  .map((allergy) => allergyTagMap[allergy])
-  .filter(Boolean)
+const requiredAllergyTags = getRequiredAllergyTags(onboardingAnswers.allergies)
 
 const allergySafeRecipes = availableRecipes.filter((recipe) =>
   requiredAllergyTags.every((tag) =>
