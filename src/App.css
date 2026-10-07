@@ -1133,3 +1133,19 @@ select:focus {
 .pantry-match-card li {
   margin: 3px 0;
 }
+/* Repeatable recipe ingredient fields */
+.ingredient-row {
+  display: grid;
+  grid-template-columns: minmax(65px, 1fr) minmax(65px, 1fr) minmax(120px, 2fr) auto;
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+.ingredient-row label { min-width: 0; }
+.recipe-details-fields .ingredient-row input {
+  min-height: 0;
+  padding: 10px;
+}
+@media (max-width: 700px) {
+  .ingredient-row { grid-template-columns: 1fr 1fr; }
+}

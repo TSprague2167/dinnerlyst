@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { supabase } from './supabase'
 import './App.css'
+import { emptyIngredientRow, getIngredientRows, formatIngredient, rowsFromIngredientStrings, validateIngredientRows } from './ingredients'
 
 
 function App() {
@@ -9,7 +10,7 @@ function App() {
   const [authPassword, setAuthPassword] = useState("")
   const [recipes, setRecipes] = useState([])
   const [recipeName, setRecipeName] = useState("")
-  const [ingredients, setIngredients] = useState("")
+  const [ingredientRows, setIngredientRows] = useState(() => [emptyIngredientRow()])
   const [instructions, setInstructions] = useState("")
   const [dietTags, setDietTags] = useState([])
   const [viewingRecipe, setViewingRecipe] = useState(null)
@@ -186,50 +187,19 @@ useEffect(() => {
       return
     }
 
-    const savedRecipes = data.map((recipe) => ({
-  id: recipe.id,
-  name: recipe.name,
-  categories: recipe.categories || [],
-  diet_tags: recipe.diet_tags || [],
-  image_url: recipe.image_url || "",
-  instructions: recipe.instructions || "",
- ingredients: (() => {
-  const parts = recipe.ingredients
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean)
-
-  const modifiers = [
-    "diced",
-    "chopped",
-    "minced",
-    "sliced",
-    "cubed",
-    "shredded",
-    "divided",
-    "to taste",
-    "bone-in",
-    "boneless",
-    "peeled",
-    "crushed",
-  ]
-
-  const combined = []
-
-  parts.forEach((part) => {
-    if (
-      modifiers.includes(part.toLowerCase()) &&
-      combined.length > 0
-    ) {
-      combined[combined.length - 1] += `, ${part}`
-    } else {
-      combined.push(part)
-    }
-  })
-
-  return combined
-})()
-}))
+    const savedRecipes = data.map((recipe) => {
+      const rows = getIngredientRows(recipe)
+      return {
+        id: recipe.id,
+        name: recipe.name,
+        categories: recipe.categories || [],
+        diet_tags: recipe.diet_tags || [],
+        image_url: recipe.image_url || "",
+        instructions: recipe.instructions || "",
+        structured_ingredients: rows,
+        ingredients: rows.map(formatIngredient),
+      }
+    })
 
     setRecipes(savedRecipes)
   }
@@ -294,40 +264,8 @@ async function importRecipeFromUrl() {
   }
 
   setRecipeName(data.name || "")
-  const ingredientModifiers = [
-  "diced",
-  "chopped",
-  "minced",
-  "sliced",
-  "cubed",
-  "shredded",
-  "divided",
-  "to taste",
-  "bone-in",
-  "boneless",
-  "peeled",
-  "crushed",
-]
-
-const cleanedIngredients = []
-
-if (Array.isArray(data.ingredients)) {
-  data.ingredients.forEach((ingredient) => {
-    const cleaned = ingredient.trim()
-    const lower = cleaned.toLowerCase()
-
-    if (
-      ingredientModifiers.includes(lower) &&
-      cleanedIngredients.length > 0
-    ) {
-      cleanedIngredients[cleanedIngredients.length - 1] += `, ${cleaned}`
-    } else {
-      cleanedIngredients.push(cleaned)
-    }
-  })
-}
-
-setIngredients(cleanedIngredients.join(", "))
+  const importedRows = rowsFromIngredientStrings(data.ingredients)
+  setIngredientRows(importedRows.length ? importedRows : [emptyIngredientRow()])
   setInstructions(
   Array.isArray(data.instructions)
     ? data.instructions.join("\n\n")
@@ -341,11 +279,13 @@ setIngredients(cleanedIngredients.join(", "))
   async function addRecipe() {
     
 
-   if (recipeName.trim() === "" || ingredients.trim() === "") {
-  alert("Please enter both a recipe name and ingredients.")
-  return
-}
- 
+   const { rows, error: ingredientError } = validateIngredientRows(ingredientRows)
+   if (!recipeName.trim() || ingredientError) {
+     alert(ingredientError || "Please enter a recipe name.")
+     return
+   }
+   const ingredients = rows.map(formatIngredient).join(", ")
+
     let uploadedImageUrl = imageUrl
 
 if (imageFile) {
@@ -360,6 +300,7 @@ if (editingRecipeId) {
     .update({
       name: recipeName,
       ingredients,
+      structured_ingredients: rows,
       instructions,
       categories: selectedCategories,
       image_url: uploadedImageUrl,
@@ -381,6 +322,7 @@ if (editingRecipeId) {
       {
         name: recipeName,
         ingredients,
+        structured_ingredients: rows,
         instructions,
         categories: selectedCategories,
         image_url: uploadedImageUrl,
@@ -404,7 +346,7 @@ if (editingRecipeId) {
 
 setRecipeName("")
 setSelectedCategories([])
-setIngredients("")
+setIngredientRows([emptyIngredientRow()])
 setEditingRecipeId(null)
 setCategory("Dinner")
 setImageUrl("")
@@ -1268,6 +1210,7 @@ localStorage.setItem("onboardingAnswers", JSON.stringify(onboardingAnswers))
       <label>Recipe photo</label>
       <input
         type="file"
+        key={editingRecipeId || "new-recipe"}
         accept="image/*"
         onChange={(e) => setImageFile(e.target.files[0])}
       />
@@ -1320,14 +1263,37 @@ localStorage.setItem("onboardingAnswers", JSON.stringify(onboardingAnswers))
    
 
          <div className="recipe-details-fields">
-  <div className="recipe-field">
+  <div className="recipe-field ingredient-builder">
     <label>Ingredients</label>
-    <input
-      type="text"
-      placeholder="Ingredients separated by commas"
-      value={ingredients}
-      onChange={(e) => setIngredients(e.target.value)}
-    />
+    {ingredientRows.map((row, index) => (
+      <div className="ingredient-row" key={index}>
+        {["amount", "unit", "ingredient"].map((field) => (
+          <label key={field}>
+            {field === "ingredient" ? "Ingredient" : field === "amount" ? "Amount" : "Unit"}
+            <input
+              type="text"
+              value={row[field]}
+              placeholder={field === "amount" ? "e.g. 1/2" : field === "unit" ? "e.g. cup" : "Ingredient name"}
+              onChange={(e) => setIngredientRows((current) => current.map((item, rowIndex) =>
+                rowIndex === index ? { ...item, [field]: e.target.value } : item
+              ))}
+            />
+          </label>
+        ))}
+        <button
+          type="button"
+          className="small-button"
+          aria-label={`Remove ingredient ${index + 1}`}
+          onClick={() => setIngredientRows((current) => {
+            const remaining = current.filter((_, rowIndex) => rowIndex !== index)
+            return remaining.length ? remaining : [emptyIngredientRow()]
+          })}
+        >Remove</button>
+      </div>
+    ))}
+    <button type="button" className="small-button" onClick={() => setIngredientRows((current) => [...current, emptyIngredientRow()])}>
+      + Add Ingredient
+    </button>
   </div>
 
   <div className="recipe-field">
@@ -1663,7 +1629,11 @@ localStorage.setItem("onboardingAnswers", JSON.stringify(onboardingAnswers))
               className="small-button"
               onClick={() => {
                 setRecipeName(recipe.name)
-                setIngredients(recipe.ingredients.join(", "))
+                const rows = getIngredientRows(recipe)
+                setIngredientRows(rows.length ? rows.map((row) => ({ ...row })) : [emptyIngredientRow()])
+                setSelectedCategories([...(recipe.categories || [])])
+                setImageUrl(recipe.image_url || "")
+                setImageFile(null)
                 setInstructions(recipe.instructions || "")
                 setDietTags(recipe.diet_tags || [])
                 setEditingRecipeId(recipe.id)
