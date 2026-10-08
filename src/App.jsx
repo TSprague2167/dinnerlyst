@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { supabase } from './supabase'
 import './App.css'
+import { buildShoppingList, refreshWeeklyMeals, rebuildShoppingList, asShoppingItem, isShoppingItemChecked, shoppingCheckIdentities } from './shoppingList'
 import { emptyIngredientRow, getIngredientRows, formatIngredient, rowsFromIngredientStrings, validateIngredientRows } from './ingredients'
 
 
@@ -34,6 +35,7 @@ function App() {
   const savedMeals = localStorage.getItem("weeklyMeals")
   return savedMeals ? JSON.parse(savedMeals) : []
 })
+  const weeklyMealsRef = useRef(weeklyMeals)
   const [lockedDays, setLockedDays] = useState([])
   const [recipeUrl, setRecipeUrl] = useState("");
   const [searchTerm, setSearchTerm] = useState("")
@@ -74,6 +76,11 @@ useEffect(() => {
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [imageFile, setImageFile] = useState(null)
   const [selectedCategories, setSelectedCategories] = useState([])
+
+  const currentShoppingItems = Object.values(shoppingList).flat()
+  const checkedShoppingCount = currentShoppingItems.filter((item) =>
+    isShoppingItemChecked(item, checkedShoppingItems)
+  ).length
 
   const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 const [editingRecipeId, setEditingRecipeId] = useState(null)
@@ -138,6 +145,7 @@ useEffect(() => {
 }, [session])
 
   useEffect(() => {
+  weeklyMealsRef.current = weeklyMeals
   localStorage.setItem(
     "weeklyMeals",
     JSON.stringify(weeklyMeals)
@@ -211,6 +219,12 @@ useEffect(() => {
     })
 
     setRecipes(savedRecipes)
+    const previousMeals = weeklyMealsRef.current
+    if (previousMeals.length) {
+      const refreshed = refreshWeeklyMeals(previousMeals, savedRecipes)
+      setWeeklyMeals(refreshed)
+      setShoppingList((previous) => rebuildShoppingList(previous, previousMeals, refreshed))
+    }
   }
   async function getUserPreferences() {
     const { data, error } = await supabase
@@ -568,79 +582,7 @@ function cookTonight(recipe) {
   createShoppingList(updatedMeals)
 }
 function createShoppingList(meals) {
-  const allIngredients = meals.flatMap((item) => item.meal?.ingredients || [])
-
-  const ingredientCounts = {}
-
-  allIngredients.forEach((ingredient) => {
-    ingredientCounts[ingredient] =
-      (ingredientCounts[ingredient] || 0) + 1
-  })
-
-  const uniqueIngredients = [...new Set(allIngredients)]
-
-  const categories = {
-    Produce: [],
-    Meat: [],
-    Dairy: [],
-    Pantry: [],
-    Other: []
-  }
-
-  uniqueIngredients.forEach((ingredient) => {
-    const item = ingredient.toLowerCase()
-
-    const formattedIngredient =
-      `${ingredient} (${ingredientCounts[ingredient]})`
-
-    if (
-      item.includes("lettuce") ||
-      item.includes("tomato") ||
-      item.includes("onion") ||
-      item.includes("pepper") ||
-      item.includes("potato") ||
-      item.includes("carrot") ||
-      item.includes("spinach") ||
-      item.includes("avocado")
-    ) {
-      categories.Produce.push(formattedIngredient)
-
-    } else if (
-      item.includes("beef") ||
-      item.includes("chicken") ||
-      item.includes("pork") ||
-      item.includes("turkey") ||
-      item.includes("sausage") ||
-      item.includes("bacon")
-    ) {
-      categories.Meat.push(formattedIngredient)
-
-    } else if (
-      item.includes("cheese") ||
-      item.includes("milk") ||
-      item.includes("cream") ||
-      item.includes("yogurt") ||
-      item.includes("butter")
-    ) {
-      categories.Dairy.push(formattedIngredient)
-
-    } else if (
-      item.includes("rice") ||
-      item.includes("pasta") ||
-      item.includes("noodle") ||
-      item.includes("tortilla") ||
-      item.includes("bread") ||
-      item.includes("sauce") ||
-      item.includes("beans")
-    ) {
-      categories.Pantry.push(formattedIngredient)
-
-    } else {
-      categories.Other.push(formattedIngredient)
-    }
-  })
-
-  setShoppingList(categories)
+  setShoppingList(buildShoppingList(meals))
 }
 const pantryMatches = recipes
   .map((recipe) => {
@@ -676,8 +618,8 @@ const pantryMatches = recipes
     }
 
     missingIngredients.forEach((ingredient) => {
-      if (!updatedList.Other.includes(ingredient)) {
-        updatedList.Other.push(ingredient)
+      if (!updatedList.Other.some((item) => asShoppingItem(item).label === ingredient)) {
+        updatedList.Other = [...updatedList.Other, { ...asShoppingItem(ingredient), extra: true }]
       }
     })
 
@@ -1913,7 +1855,7 @@ localStorage.setItem("onboardingAnswers", JSON.stringify(onboardingAnswers))
     <h2>🛒 Shopping Progress</h2>
 
     <p>
-      {checkedShoppingItems.length} of{" "}
+      {checkedShoppingCount} of{" "}
       {Object.values(shoppingList).flat().length} items checked
     </p>
 
@@ -1923,7 +1865,7 @@ localStorage.setItem("onboardingAnswers", JSON.stringify(onboardingAnswers))
         style={{
           width: `${
             Object.values(shoppingList).flat().length > 0
-              ? (checkedShoppingItems.length /
+              ? (checkedShoppingCount /
                   Object.values(shoppingList).flat().length) *
                 100
               : 0
@@ -1944,9 +1886,9 @@ localStorage.setItem("onboardingAnswers", JSON.stringify(onboardingAnswers))
         {activeTab === "shopping" && (
         <section className="card">
           <h2>🛒Shopping List</h2>
-          <p>Checked items: {checkedShoppingItems.length}</p>
+          <p>Checked items: {checkedShoppingCount}</p>
 
-          {shoppingList.length === 0 && <p className="empty">Your grocery list will appear here.</p>}
+          {currentShoppingItems.length === 0 && <p className="empty">Your grocery list will appear here.</p>}
 
           {Object.entries(shoppingList).map(([category, items]) => (
   items.length > 0 && (
@@ -1958,42 +1900,41 @@ localStorage.setItem("onboardingAnswers", JSON.stringify(onboardingAnswers))
          <>
   <input
   type="checkbox"
-  checked={checkedShoppingItems.includes(ingredient)}
+  checked={isShoppingItemChecked(ingredient, checkedShoppingItems)}
   onChange={async (e) => {
     if (e.target.checked) {
       const { error } = await supabase
   .from("checked_shopping_items")
   .insert({
     user_id: session.user.id,
-    item_name: ingredient,
+    item_name: asShoppingItem(ingredient).key,
   })
 
 if (error) {
   console.error("Error saving checked item:", error)
   return
 }
-      setCheckedShoppingItems([
-        ...checkedShoppingItems,
-        ingredient
-      ])
+      setCheckedShoppingItems((current) => [...new Set([...current, asShoppingItem(ingredient).key])])
     } else {
-      const { error } = await supabase
-  .from("checked_shopping_items")
-  .delete()
-  .eq("user_id", session.user.id)
-  .eq("item_name", ingredient)
+      const identities = shoppingCheckIdentities(ingredient)
+      // Exact equality avoids PostgREST IN quoting of JSON-based canonical keys.
+      for (const identity of identities) {
+        const { error } = await supabase
+          .from("checked_shopping_items")
+          .delete()
+          .eq("user_id", session.user.id)
+          .eq("item_name", identity)
 
-if (error) {
-  console.error("Error removing checked item:", error)
-  return
-}
-      setCheckedShoppingItems(
-        checkedShoppingItems.filter((item) => item !== ingredient)
-      )
+        if (error) {
+          console.error("Error removing checked item:", error)
+          return
+        }
+      }
+      setCheckedShoppingItems((current) => current.filter((item) => !identities.includes(item)))
     }
   }}
 />
-  {ingredient}
+  {asShoppingItem(ingredient).label}
 </> 
         </div>
       ))}

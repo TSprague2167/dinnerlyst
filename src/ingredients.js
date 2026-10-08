@@ -22,15 +22,26 @@ export function rowsFromIngredientStrings(input) {
     .map((ingredient) => ({ ...emptyIngredientRow(), ingredient: ingredient.trim() }))
 }
 
-export function getIngredientRows(recipe) {
-  const structured = recipe.structured_ingredients
-  if (Array.isArray(structured) && structured.length && structured.every((row) =>
-    row && typeof row === "object" &&
-    ["amount", "unit", "ingredient"].every((field) => typeof row[field] === "string")
-  )) {
-    const result = validateIngredientRows(structured)
-    if (!result.error) return result.rows
+// Normalize existing JSON shapes at the read boundary; builder rows remain strings.
+export function normalizeStructuredIngredients(input) {
+  if (!Array.isArray(input) || !input.length) return null
+  const rows = []
+  for (const row of input) {
+    if (!row || typeof row !== "object") return null
+    // Accept starter JSON and builder JSON; keep one internal row shape.
+    const amount = row.amount ?? row.quantity ?? ""
+    const ingredient = row.ingredient ?? row.item
+    if (!(typeof amount === "string" || (typeof amount === "number" && Number.isFinite(amount))) ||
+        typeof ingredient !== "string" || !ingredient.trim() ||
+        (row.unit != null && typeof row.unit !== "string")) return null
+    rows.push({ amount: String(amount).trim(), unit: (row.unit ?? "").trim(), ingredient: ingredient.trim() })
   }
+  return rows
+}
+
+export function getIngredientRows(recipe) {
+  const structured = normalizeStructuredIngredients(recipe.structured_ingredients)
+  if (structured) return structured
 
   // Preserve the existing legacy comma/modifier handling without guessing quantities.
   if (Array.isArray(recipe.ingredients)) return rowsFromIngredientStrings(recipe.ingredients)
