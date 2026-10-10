@@ -1,3 +1,4 @@
+import { pantryHasIngredient } from './pantry.js'
 import { formatIngredient, normalizeStructuredIngredients } from './ingredients.js'
 
 const clean = (value) => value.trim().replace(/\s+/g, ' ')
@@ -47,7 +48,7 @@ export function shoppingCheckIdentities(item) {
   const entry = asShoppingItem(item)
   return [...new Set([entry.key, ...(entry.legacyGroups || []).flat()])]
 }
-export function buildShoppingList(meals) {
+export function buildShoppingList(meals, pantryNames = []) {
   const groups = new Map()
   const oldCounts = new Map()
   const sources = []
@@ -57,7 +58,7 @@ export function buildShoppingList(meals) {
     const entries = rows ? rows.map(row => ({ row, text: formatIngredient(row) })) :
       (Array.isArray(meal.ingredients) ? meal.ingredients : []).filter(text => typeof text === 'string').map(text => ({ text }))
     for (const entry of entries) {
-      if (!entry.text.trim()) continue
+      if (!entry.text.trim() || pantryHasIngredient(entry.row?.ingredient ?? entry.text, pantryNames)) continue
       oldCounts.set(entry.text, (oldCounts.get(entry.text) || 0) + 1)
       sources.push(entry)
     }
@@ -104,7 +105,7 @@ export function refreshWeeklyMeals(meals, recipes) {
   })
 }
 
-export function rebuildShoppingList(previous, oldMeals, refreshedMeals) {
+export function rebuildShoppingList(previous, oldMeals, refreshedMeals, pantryNames = []) {
   const oldGenerated = Object.values(buildShoppingList(oldMeals)).flat()
   const oldLabels = new Set(oldGenerated.map(item => item.label))
   const result = buildShoppingList(refreshedMeals)
@@ -141,5 +142,22 @@ export function rebuildShoppingList(previous, oldMeals, refreshedMeals) {
         [...new Set([...group, ...(prior.legacyGroups[index] || [])])])
     }
   }
-  return result
+  if (!pantryNames.length) return result
+  const visible = buildShoppingList(refreshedMeals, pantryNames)
+  const visibleByKey = new Map(Object.values(visible).flat().map(item => [item.key, item]))
+  for (const [category, entries] of Object.entries(result)) {
+    visible[category] ||= []
+    for (const item of entries) {
+      if (!item.generated || item.extra) {
+        visible[category].push(item)
+      } else if (visibleByKey.has(item.key)) {
+        visibleByKey.get(item.key).legacyGroups = item.legacyGroups
+      } else {
+        // Retain only invisible checkbox metadata so pantry removal/refresh can
+        // restore compatibility aliases without touching persisted checked rows.
+        visible[category].push({ ...item, pantryHidden: true })
+      }
+    }
+  }
+  return visible
 }

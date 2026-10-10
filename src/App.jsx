@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { supabase } from './supabase'
 import './App.css'
-import { buildShoppingList, refreshWeeklyMeals, rebuildShoppingList, asShoppingItem, isShoppingItemChecked, shoppingCheckIdentities } from './shoppingList'
+import { refreshWeeklyMeals, rebuildShoppingList, asShoppingItem, isShoppingItemChecked, shoppingCheckIdentities } from './shoppingList'
 import { emptyIngredientRow, getIngredientRows, formatIngredient, rowsFromIngredientStrings, validateIngredientRows } from './ingredients'
 
 
@@ -44,6 +44,8 @@ function App() {
   const [swipeOffsetX, setSwipeOffsetX] = useState(0)
   const [imageUrl, setImageUrl] = useState("")
   const [pantryItems, setPantryItems] = useState([])
+  const [pantryLoadedSession, setPantryLoadedSession] = useState(null)
+  const pantrySnapshotRef = useRef({ session: null, items: [] })
   const [weeklyMeals, setWeeklyMeals] = useState(() => {
   const savedMeals = localStorage.getItem("weeklyMeals")
   return savedMeals ? JSON.parse(savedMeals) : []
@@ -73,7 +75,7 @@ useEffect(() => {
   const [imageFile, setImageFile] = useState(null)
   const [selectedCategories, setSelectedCategories] = useState([])
 
-  const currentShoppingItems = Object.values(shoppingList).flat()
+  const currentShoppingItems = Object.values(shoppingList).flat().filter((item) => !asShoppingItem(item).pantryHidden)
   const checkedShoppingCount = currentShoppingItems.filter((item) =>
     isShoppingItemChecked(item, checkedShoppingItems)
   ).length
@@ -109,27 +111,38 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
     }
   }, [])
   useEffect(() => {
-  async function loadPantryItems() {
-    if (!session?.user?.id) {
+    let active = true
+    async function loadPantryItems() {
+      pantrySnapshotRef.current = { session, items: [] }
       setPantryItems([])
-      return
+      setPantryLoadedSession(null)
+      if (!session?.user?.id) return
+      try {
+        const { data, error } = await supabase
+          .from("pantry_items")
+          .select("item_name")
+          .eq("user_id", session.user.id)
+        if (!active) return
+        if (error) throw error
+        const items = (data || []).map((item) => item.item_name)
+        pantrySnapshotRef.current = { session, items }
+        setPantryItems(items)
+        setPantryLoadedSession(session)
+      } catch (error) {
+        if (active) console.error("Error loading pantry items:", error)
+      }
     }
-
-    const { data, error } = await supabase
-      .from("pantry_items")
-      .select("item_name")
-      .eq("user_id", session.user.id)
-
-    if (error) {
-      console.error("Error loading pantry items:", error)
-      return
+    loadPantryItems()
+    return () => { active = false }
+  }, [session])
+  useEffect(() => {
+    async function rebuildForPantry() {
+      if (!session || pantryLoadedSession !== session) return
+      pantrySnapshotRef.current = { session, items: pantryItems }
+      setShoppingList((previous) => rebuildShoppingList(previous, weeklyMeals, weeklyMeals, pantryItems))
     }
-
-    setPantryItems((data || []).map((item) => item.item_name))
-  }
-
-  loadPantryItems()
-}, [session])
+    rebuildForPantry()
+  }, [session, pantryLoadedSession, pantryItems, weeklyMeals])
 useEffect(() => {
   async function loadCheckedShoppingItems() {
     if (!session?.user?.id) {
@@ -274,7 +287,7 @@ useEffect(() => {
     if (previousMeals.length) {
       const refreshed = refreshWeeklyMeals(previousMeals, savedRecipes)
       setWeeklyMeals(refreshed)
-      setShoppingList((previous) => rebuildShoppingList(previous, previousMeals, refreshed))
+      setShoppingList((previous) => rebuildShoppingList(previous, previousMeals, refreshed, pantrySnapshotRef.current.session === session ? pantrySnapshotRef.current.items : []))
     }
   }
 async function uploadRecipeImage(file) {
@@ -610,7 +623,7 @@ function cookTonight(recipe) {
   createShoppingList(updatedMeals)
 }
 function createShoppingList(meals) {
-  setShoppingList(buildShoppingList(meals))
+  setShoppingList((previous) => rebuildShoppingList(previous, weeklyMeals, meals, pantryItems))
 }
 const pantryMatches = recipes
   .map((recipe) => {
@@ -1888,7 +1901,7 @@ if (!saved || currentSessionRef.current !== completingSession) return
 
     <p>
       {checkedShoppingCount} of{" "}
-      {Object.values(shoppingList).flat().length} items checked
+      {currentShoppingItems.length} items checked
     </p>
 
     <div className="progress-track">
@@ -1896,9 +1909,9 @@ if (!saved || currentSessionRef.current !== completingSession) return
         className="progress-fill"
         style={{
           width: `${
-            Object.values(shoppingList).flat().length > 0
+            currentShoppingItems.length > 0
               ? (checkedShoppingCount /
-                  Object.values(shoppingList).flat().length) *
+                  currentShoppingItems.length) *
                 100
               : 0
           }%`,
@@ -1922,7 +1935,9 @@ if (!saved || currentSessionRef.current !== completingSession) return
 
           {currentShoppingItems.length === 0 && <p className="empty">Your grocery list will appear here.</p>}
 
-          {Object.entries(shoppingList).map(([category, items]) => (
+          {Object.entries(shoppingList).map(([category, entries]) => {
+  const items = entries.filter((item) => !asShoppingItem(item).pantryHidden)
+  return (
   items.length > 0 && (
     <div key={category}>
       <h3>{category}</h3>
@@ -1972,7 +1987,7 @@ if (error) {
       ))}
     </div>
   )
-))}
+)})}
         </section>
         )}
         {activeTab === "pantry" && (
