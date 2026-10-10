@@ -1149,3 +1149,113 @@ select:focus {
 @media (max-width: 700px) {
   .ingredient-row { grid-template-columns: 1fr 1fr; }
 }
+
+/* Primary views: retain the recipe draft while keeping it out of other views. */
+.recipe-builder-section[hidden] {
+  display: none;
+}
+.header-controls,
+.tab-nav {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.tab-nav button[aria-current="page"] {
+  background-color: #6B8F71;
+  color: white;
+}
+
+/* Compact dietary chips, scoped to the Add/Edit Recipe form. */
+.recipe-field.recipe-dietary-tags {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+.recipe-dietary-tags > label {
+  flex-basis: 100%;
+}
+.recipe-dietary-tags .diet-option {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+/* Signed-in app chrome; feature panels and onboarding keep their styles. */
+.hero.app-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "brand controls" "stats controls" "nav nav";
+  align-items: center;
+  gap: 10px 24px;
+  padding: 20px 24px 14px;
+  text-align: left;
+  background: #fffdf9;
+  border: 1px solid #e7ddd5;
+  border-radius: 22px;
+  box-shadow: 0 4px 18px rgba(124, 74, 53, .04);
+}
+.app-header .app-brand { grid-area: brand; min-width: 0; }
+.app-header h1 { font-size: clamp(30px, 3vw, 40px); color: #7c4a35; }
+.app-header .app-brand p { margin: 7px 0 0; font-size: 15px; line-height: 1.4; color: #75675d; }
+.app-header .hero-stats { grid-area: stats; justify-content: flex-start; gap: 8px; margin: 0; }
+.app-header .hero-stats p { font-size: 12px; padding: 5px 10px; }
+.app-header .header-controls { grid-area: controls; justify-content: flex-end; align-items: center; gap: 8px; }
+.app-header .header-controls button {
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid #e7ddd5;
+  border-radius: 10px;
+  background: transparent;
+  color: #75675d;
+  font-size: 13px;
+  font-weight: 600;
+  max-width: 100%;
+}
+.app-header .header-controls button:hover { background: #f7f3ef; transform: none; }
+.app-header .tab-nav {
+  grid-area: nav;
+  justify-content: flex-start;
+  gap: 8px;
+  padding-top: 14px;
+  margin-top: 4px;
+  border-top: 1px solid #eee5dc;
+  min-width: 0;
+}
+.app-header .tab-nav button {
+  flex: 1;
+  padding: 11px 16px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: #f4f6f1;
+  color: #55624d;
+  font-size: 15px;
+  font-weight: 600;
+  min-width: 0;
+}
+.app-header .tab-nav button:hover { background: #e8ede5; transform: none; }
+.app-header .tab-nav button[aria-current="page"] {
+  background: #6b8f71;
+  border-color: #597c5e;
+  color: white;
+  box-shadow: 0 2px 6px rgba(85, 98, 77, .12);
+}
+.app-header button:focus-visible { outline: 2px solid #7c4a35; outline-offset: 3px; }
+@media (max-width: 700px) {
+  .hero.app-header {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "brand" "stats" "controls" "nav";
+    gap: 12px;
+    padding: 18px 14px 14px;
+  }
+  .app-header .header-controls { justify-content: flex-start; }
+  .app-header .tab-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-header .tab-nav button { padding: 11px 8px; }
+}

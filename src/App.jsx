@@ -14,8 +14,21 @@ function getRequiredAllergyTags(allergies = []) {
   return allergies.filter((tag) => allergySafeTags.includes(tag))
 }
 
+const defaultOnboardingAnswers = () => ({
+  householdSize: 2,
+  dietPreferences: [],
+  allergies: [],
+  dislikedFoods: "",
+  cookingStyle: ""
+})
+
 function App() {
   const [session, setSession] = useState(null)
+  const currentSessionRef = useRef(null)
+  const [authReady, setAuthReady] = useState(false)
+  const [authLoadError, setAuthLoadError] = useState(null)
+  const [preferenceLoad, setPreferenceLoad] = useState(null)
+  const [preferenceRetry, setPreferenceRetry] = useState(0)
   const [authEmail, setAuthEmail] = useState("")
   const [authPassword, setAuthPassword] = useState("")
   const [recipes, setRecipes] = useState([])
@@ -47,25 +60,8 @@ function App() {
   return saved ? JSON.parse(saved) : []
 })
  const [checkedShoppingItems, setCheckedShoppingItems] = useState([])
-const [onboardingStep, setOnboardingStep] = useState(() => {
-  const completed = localStorage.getItem("onboardingComplete")
-  return completed === "true" ? 0 : 1
-})
-
-
-const [onboardingAnswers, setOnboardingAnswers] = useState(() => {
-  const saved = localStorage.getItem("onboardingAnswers")
-
-  return saved
-    ? JSON.parse(saved)
-    : {
-        householdSize: 2,
-        dietPreferences: [],
-        allergies: [],
-        dislikedFoods: "",
-        cookingStyle: ""
-      }
-})
+const [onboardingStep, setOnboardingStep] = useState(1)
+const [onboardingAnswers, setOnboardingAnswers] = useState(defaultOnboardingAnswers)
 
 useEffect(() => {
   localStorage.setItem(
@@ -85,15 +81,30 @@ useEffect(() => {
   const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 const [editingRecipeId, setEditingRecipeId] = useState(null)
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
+    let active = true
+    let authEventReceived = false
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!active || authEventReceived) return
+      setAuthLoadError(error?.message || null)
+      currentSessionRef.current = data?.session || null
+      setSession(data?.session || null)
+      setAuthReady(true)
+    }).catch((error) => {
+      if (!active || authEventReceived) return
+      setAuthLoadError(error.message)
+      setAuthReady(true)
     })
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      authEventReceived = true
+      setAuthLoadError(null)
+      currentSessionRef.current = session
       setSession(session)
+      setAuthReady(true)
     })
 
     return () => {
+      active = false
       listener.subscription.unsubscribe()
     }
   }, [])
@@ -155,9 +166,49 @@ useEffect(() => {
   useEffect(() => {
     if (session) {
       getRecipes()
-      getUserPreferences()
     }
   }, [session])
+
+  useEffect(() => {
+    let active = true
+    async function loadPreferences() {
+      if (!session?.user?.id) {
+        setOnboardingAnswers(defaultOnboardingAnswers())
+        setOnboardingStep(1)
+        setPreferenceLoad(null)
+        return
+      }
+      setOnboardingAnswers(defaultOnboardingAnswers())
+      setOnboardingStep(1)
+      setPreferenceLoad({ session, status: "loading" })
+      try {
+        const { data, error } = await supabase
+          .from("user_preferences")
+          .select("*")
+          .eq("user_id", session.user.id)
+          .maybeSingle()
+        if (!active) return
+        if (error) throw error
+        if (data) {
+          setOnboardingAnswers({
+            householdSize: data.household_size,
+            dietPreferences: data.diet_preferences || [],
+            allergies: data.allergies || [],
+            dislikedFoods: data.disliked_foods || "",
+            cookingStyle: data.cooking_style || ""
+          })
+        }
+        setOnboardingStep(data ? 0 : 1)
+        setPreferenceLoad({ session, status: "ready" })
+      } catch (error) {
+        if (!active) return
+        console.error("Error loading preferences:", error)
+        setPreferenceLoad({ session, status: "error", message: error.message })
+      }
+    }
+    loadPreferences()
+    return () => { active = false }
+  }, [session, preferenceRetry])
 
   async function signUp() {
     const { error } = await supabase.auth.signUp({
@@ -226,29 +277,6 @@ useEffect(() => {
       setShoppingList((previous) => rebuildShoppingList(previous, previousMeals, refreshed))
     }
   }
-  async function getUserPreferences() {
-    const { data, error } = await supabase
-  .from("user_preferences")
-  .select("*")
-  .eq("user_id", session.user.id)
-  .maybeSingle()
-  if (error) {
-  console.error("Error loading preferences:", error)
-  return
-}
-if (data) {
- 
-
-  setOnboardingAnswers({
-    householdSize: data.household_size,
-    dietPreferences: data.diet_preferences || [],
-    allergies: data.allergies || [],
-    dislikedFoods: data.disliked_foods || "",
-    cookingStyle: data.cooking_style || ""
-  })
-}
-
-}
 async function uploadRecipeImage(file) {
   if (!file) return ""
 
@@ -626,6 +654,24 @@ const pantryMatches = recipes
     return updatedList
   })
 }
+  if (!authReady || (session && (preferenceLoad?.session !== session || preferenceLoad.status === "loading"))) {
+    return <div className="app" role="status">Loading Dinnerlyst…</div>
+  }
+  if (authLoadError) {
+    return <div className="app" role="alert">
+      <p>Could not load your sign-in session. Please try again.</p>
+      <button className="primary-button" onClick={() => window.location.reload()}>Retry</button>
+    </div>
+  }
+  if (session && preferenceLoad?.status === "error") {
+    return <div className="app" role="alert">
+      <p>Could not load your preferences. Please try again.</p>
+      <button className="primary-button" onClick={() => {
+        setPreferenceLoad(null)
+        setPreferenceRetry((current) => current + 1)
+      }}>Retry</button>
+    </div>
+  }
   if (!session) {
     return (
       <div className="app">
@@ -1037,12 +1083,11 @@ if (onboardingStep === 5) {
         <button
   className="onboarding-continue"
  onClick={async () => {
+const completingSession = session
 const saved = await savePreferences()
 
-if (!saved) return
+if (!saved || currentSessionRef.current !== completingSession) return
 
-localStorage.setItem("onboardingAnswers", JSON.stringify(onboardingAnswers))
-    localStorage.setItem("onboardingComplete", "true")
     setOnboardingStep(0)
   }}
 >
@@ -1054,42 +1099,43 @@ localStorage.setItem("onboardingAnswers", JSON.stringify(onboardingAnswers))
 }
   return (
     <div className="app">
-      <header className="hero">
-        <h1>Dinnerlyst</h1>
-        <p>Weekly meal planning made simple.</p>
+      <header className="hero app-header">
+        <div className="app-brand">
+          <h1>Dinnerlyst</h1>
+          <p>Weekly meal planning made simple.</p>
+        </div>
 
         <div className="hero-stats">
           <p>{recipes.length} Recipes Saved </p>
           <p>Plan your week in seconds</p>
         </div>
 
-        <button className="logout-button" onClick={logout}>
-          Log Out
+        <div className="header-controls">
+          <button className="small-button" aria-current={activeTab === "preferences" ? "page" : undefined} onClick={() => setActiveTab("preferences")}>
+            ⚙️ Settings / Preferences
+          </button>
+          <button className="logout-button" onClick={logout}>
+            Log Out
+          </button>
+        </div>
+      <nav className="tab-nav" aria-label="Main navigation">
+        <button aria-current={activeTab === "planner" ? "page" : undefined} onClick={() => setActiveTab("planner")}>
+          🍽 Plan
         </button>
+        <button aria-current={activeTab === "recipes" ? "page" : undefined} onClick={() => setActiveTab("recipes")}>
+          📖 Recipes
+        </button>
+        <button aria-current={activeTab === "shopping" ? "page" : undefined} onClick={() => setActiveTab("shopping")}>
+          🛒 Shop
+        </button>
+        <button aria-current={activeTab === "pantry" ? "page" : undefined} onClick={() => setActiveTab("pantry")}>
+          🥫 Pantry
+        </button>
+      </nav>
       </header>
-       <nav className="tab-nav">
-  <button onClick={() => setActiveTab("planner")}>
-    🍽️ Meal Planner
-  </button>
-
-  <button onClick={() => setActiveTab("recipes")}>
-    📖 Recipes
-  </button>
-
-  <button onClick={() => setActiveTab("shopping")}>
-    🛒 Shopping List
-  </button>
-
-  <button onClick={() => setActiveTab("pantry")}>
-    🥫 Pantry
-  </button>
-  <button onClick={() => setActiveTab("preferences")}>
-  ⚙️ Preferences
-</button>
-</nav>
 
 
-      <section className="card">
+      <section className="card recipe-builder-section" hidden={activeTab !== "recipes"}>
         <h2>Add a Recipe</h2>
 
   <div className="form recipe-form-modern">
@@ -1228,7 +1274,7 @@ localStorage.setItem("onboardingAnswers", JSON.stringify(onboardingAnswers))
       rows="6"
     />
   </div>
-  <div className="recipe-field">
+  <div className="recipe-field recipe-dietary-tags">
   <label>Dietary tags</label>
   <button
   type="button"
@@ -1432,11 +1478,13 @@ localStorage.setItem("onboardingAnswers", JSON.stringify(onboardingAnswers))
         </div>
       </section>
 
+      {activeTab === "planner" && (
       <section className="action-section">
         <button className="generate-button" onClick={generateWeeklyMeals}>
           🍽️ Generate Weekly Meals + Shopping List
         </button>
       </section>
+      )}
 
      <main className="grid recipes-grid">
       {activeTab === "recipes" && (
