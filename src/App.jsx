@@ -666,45 +666,29 @@ const pantryMatches = recipes
       </div>
     )
   }
-  const saveOnboardingPreferences = async () => {
-    console.log("SAVING ONBOARDING:", onboardingAnswers)
-  const { error } = await supabase
-    .from("user_preferences")
-    .insert({
-      user_id: session.user.id,
-      household_size: onboardingAnswers.householdSize,
-      diet_preferences: onboardingAnswers.dietPreferences,
-      allergies: onboardingAnswers.allergies.filter(Boolean),
-      disliked_foods: onboardingAnswers.dislikedFoods,
-      cooking_style: onboardingAnswers.cookingStyle
-    })
+  const savePreferences = async () => {
+    const { error } = await supabase
+      .from("user_preferences")
+      .upsert({
+        user_id: session.user.id,
+        household_size: onboardingAnswers.householdSize,
+        diet_preferences: onboardingAnswers.dietPreferences,
+        allergies: onboardingAnswers.allergies.filter(Boolean),
+        disliked_foods: onboardingAnswers.dislikedFoods,
+        cooking_style: onboardingAnswers.cookingStyle
+      }, { onConflict: "user_id" })
 
- if (error) {
-  console.error("Error saving preferences:", error)
-  return false
-}
+    if (error) {
+      console.error("Error saving preferences:", error)
+      return false
+    }
+    return true
+  }
 
-return true
-}
-const updatePreferences = async () => {
-  const { error } = await supabase
-  .from("user_preferences")
-  .update({
-    household_size: onboardingAnswers.householdSize,
-    diet_preferences: onboardingAnswers.dietPreferences,
-   allergies: onboardingAnswers.allergies.filter(Boolean),
-    disliked_foods: onboardingAnswers.dislikedFoods,
-    cooking_style: onboardingAnswers.cookingStyle
-  })
-  .eq("user_id", session.user.id)
-  if (error) {
-  console.error("Error updating preferences:", error)
-  return
-}
-
-console.log("Preferences updated!")
-
-}
+  const updatePreferences = async () => {
+    const saved = await savePreferences()
+    if (saved) console.log("Preferences updated!")
+  }
  if (onboardingStep === 1) {
   return (
     <div>
@@ -1053,7 +1037,7 @@ if (onboardingStep === 5) {
         <button
   className="onboarding-continue"
  onClick={async () => {
-const saved = await saveOnboardingPreferences()
+const saved = await savePreferences()
 
 if (!saved) return
 
