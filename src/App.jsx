@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { supabase } from './supabase'
 import './App.css'
+import { getPantryRecipeMatch } from './pantry'
 import { refreshWeeklyMeals, rebuildShoppingList, asShoppingItem, isShoppingItemChecked, shoppingCheckIdentities } from './shoppingList'
 import { emptyIngredientRow, getIngredientRows, formatIngredient, rowsFromIngredientStrings, validateIngredientRows } from './ingredients'
 
@@ -650,6 +651,10 @@ const pantryMatches = recipes
   })
   .filter((recipe) => recipe.matchedCount > 0)
   .sort((a, b) => b.matchPercentage - a.matchPercentage)
+  const pantryViewMatches = recipes
+    .map(recipe => getPantryRecipeMatch(recipe, pantryItems))
+    .filter(recipe => recipe.totalCount > 0 && recipe.matchedCount / recipe.totalCount >= 0.5)
+    .sort((a, b) => b.matchedCount - a.matchedCount)
   const addMissingToShoppingList = (missingIngredients) => {
   setShoppingList((currentList) => {
     const updatedList = { ...currentList }
@@ -1991,15 +1996,14 @@ if (error) {
         </section>
         )}
         {activeTab === "pantry" && (
-  <section className="card">
-    <h2>🥫 Pantry</h2>
-    <input
-  type="text"
-  placeholder="Search ingredients..."
-  value={pantrySearch}
-  onChange={(e) => setPantrySearch(e.target.value)}
- onKeyDown={async (e) => {
-  if (e.key === "Enter" && pantrySearch.trim()) {
+  <section className="card pantry-view">
+    <div className="pantry-intro">
+      <h2>What do you already have?</h2>
+      <p>Save ingredients you have on hand. Dinnerlyst won’t add them to your generated shopping list.</p>
+    </div>
+    <form className="pantry-add" onSubmit={async (e) => {
+  e.preventDefault()
+  if (pantrySearch.trim()) {
     const newItem = pantrySearch.trim()
 
 if (!pantryItems.includes(newItem) && session?.user?.id) {
@@ -2019,8 +2023,60 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
 
     setPantrySearch("")
   }
-}}
+}}>
+      <label htmlFor="pantry-ingredient">Add ingredient</label>
+      <div className="pantry-add-row">
+    <input
+  type="text"
+  placeholder="Search ingredients..."
+  value={pantrySearch}
+  onChange={(e) => setPantrySearch(e.target.value)}
+  id="pantry-ingredient"
 />
+        <button type="submit" className="pantry-add-button">Add</button>
+      </div>
+    </form>
+    <div className="pantry-section">
+      <h3>Your Pantry</h3>
+      <div className="pantry-chip-group">
+{pantryItems.length === 0 ? (
+  <p className="pantry-empty">Your pantry is empty. Add an ingredient above or choose a pantry staple below.</p>
+) : (
+  pantryItems.map((item) => (
+  <span key={item} className="pantry-chip">
+    <span>{item}</span>
+    <button
+      type="button"
+      className="pantry-remove"
+      aria-label={`Remove ${item}`}
+      onClick={async () =>
+       {
+  const { error } = await supabase
+    .from("pantry_items")
+    .delete()
+    .eq("user_id", session.user.id)
+    .eq("item_name", item)
+
+  if (!error) {
+    setPantryItems(
+      pantryItems.filter((pantryItem) => pantryItem !== item)
+    )
+  } else {
+    console.error("Error deleting pantry item:", error)
+  }
+}
+      }
+    >
+      ✕
+    </button>
+  </span>
+))
+)}
+      </div>
+    </div>
+    <div className="pantry-section">
+      <h3>Pantry Staples</h3>
+      <div className="pantry-chip-group">
 {[
   "Chicken",
   "Rice",
@@ -2037,6 +2093,9 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
 ).map((item) => (
   <button
     key={item}
+    type="button"
+    className="pantry-staple"
+    disabled={pantryItems.includes(item)}
     onClick={async () => {
      if (!pantryItems.includes(item) && session?.user?.id) {
   const { error } = await supabase
@@ -2055,38 +2114,17 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
       setPantrySearch("")
     }}
   >
-    {item}
+    {item}{pantryItems.includes(item) && <span className="pantry-added">✓ Added</span>}
   </button>
 ))}
-    <h3>Your Pantry</h3>
-   <h3>Recipe Matches</h3>
-
-{recipes
-  .map((recipe) => {
-    const matchedIngredients = recipe.ingredients.filter((ingredient) =>
-      pantryItems.some((item) =>
-        ingredient.toLowerCase().includes(item.toLowerCase())
-      )
-    )
-
-   return {
-  ...recipe,
-  matchedCount: matchedIngredients.length,
-  totalCount: recipe.ingredients.length,
-  matchPercentage:
-  Math.round(
-    (matchedIngredients.length / recipe.ingredients.length) * 100
-  ),
-  missingIngredients: recipe.ingredients.filter(
-    (ingredient) =>
-      !pantryItems.some((item) =>
-        ingredient.toLowerCase().includes(item.toLowerCase())
-      )
-  )
-}
-  })
-  .filter((recipe) => recipe.matchedCount > 0)
-  .sort((a, b) => b.matchedCount - a.matchedCount)
+      </div>
+    </div>
+    <div className="pantry-section pantry-meals">
+      <h3>Meals You're Close to Making</h3>
+      {pantryViewMatches.length === 0 && (
+        <p className="pantry-empty">Add more pantry ingredients and we'll show meals you're close to making.</p>
+      )}
+{pantryViewMatches
   .map((recipe) => (
     <div
   key={recipe.id}
@@ -2120,36 +2158,7 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
     </div>
   ))}
 
-{pantryItems.length === 0 ? (
-  <p>No pantry items yet.</p>
-) : (
-  pantryItems.map((item) => (
-  <span key={item} className="category-pill">
-    {item}
-    <button
-      onClick={async () =>
-       {
-  const { error } = await supabase
-    .from("pantry_items")
-    .delete()
-    .eq("user_id", session.user.id)
-    .eq("item_name", item)
-
-  if (!error) {
-    setPantryItems(
-      pantryItems.filter((pantryItem) => pantryItem !== item)
-    )
-  } else {
-    console.error("Error deleting pantry item:", error)
-  }
-}
-      }
-    >
-      ✕
-    </button>
-  </span>
-))
-)}
+    </div>
   </section>
 )}
 {activeTab === "preferences" && (

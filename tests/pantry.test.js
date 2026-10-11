@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { pantryHasIngredient } from '../src/pantry.js'
+import { pantryHasIngredient, getPantryRecipeMatch } from '../src/pantry.js'
 import { buildShoppingList, rebuildShoppingList, isShoppingItemChecked, shoppingCheckIdentities } from '../src/shoppingList.js'
 const visible = list => Object.values(list).flat().filter(item => !item.pantryHidden)
 const meal = structured_ingredients => ({ day: 'Monday', meal: { id: 57, structured_ingredients } })
@@ -46,4 +46,47 @@ test('pantry add/remove preserves extras, quantities, checked identities and leg
   assert.ok(shoppingCheckIdentities(oil).includes('olive oil (2)'))
   assert.ok(visible(restored).some(item=>item.label==='paper towels'))
   assert.equal(visible(hidden).filter(item=>isShoppingItemChecked(item,checked)).length,1)
+})
+
+const qualifies = match => match.totalCount > 0 && match.matchedCount / match.totalCount >= 0.5
+
+test('Pantry recipe matches use both structured schemas and format missing quantities', () => {
+  for (const rows of [
+    [{ item: 'eggs', quantity: 2, unit: 'whole' }, { item: 'olive oil', quantity: 2, unit: 'tbsp' }],
+    [{ ingredient: 'eggs', amount: '2', unit: 'whole' }, { ingredient: 'olive oil', amount: '2', unit: 'tbsp' }],
+  ]) {
+    const match = getPantryRecipeMatch({ id: 57, structured_ingredients: rows, ingredients: ['incorrect fallback'] }, [' EGG '])
+    assert.equal(match.id, 57)
+    assert.equal(match.matchedCount, 1)
+    assert.equal(match.totalCount, 2)
+    assert.equal(match.matchPercentage, 50)
+    assert.equal(qualifies(match), true)
+    assert.deepEqual(match.missingIngredients, ['2 tbsp olive oil'])
+  }
+})
+
+test('legacy Pantry matches stay conservative and preserve missing strings', () => {
+  const match = getPantryRecipeMatch({ ingredients: ['tomatoes', 'chicken broth', 'rice vinegar', '2 tbsp olive oil'] }, ['tomato', 'chicken', 'rice', 'olive oil'])
+  assert.equal(match.matchedCount, 1)
+  assert.equal(match.totalCount, 4)
+  assert.equal(match.matchPercentage, 25)
+  assert.equal(qualifies(match), false)
+  assert.deepEqual(match.missingIngredients, ['chicken broth', 'rice vinegar', '2 tbsp olive oil'])
+})
+
+test('eligibility includes exactly half and excludes below half and empty recipes', () => {
+  const half = getPantryRecipeMatch({ ingredients: ['eggs', 'rice'] }, ['egg'])
+  assert.equal(qualifies(half), true)
+  const below = getPantryRecipeMatch({ ingredients: ['eggs', 'rice', 'milk'] }, ['egg'])
+  assert.equal(qualifies(below), false)
+  // A rounded 50% must not make an actual ratio below half qualify.
+  const rounded = getPantryRecipeMatch({ ingredients: [...Array(50).fill('eggs'), ...Array(51).fill('rice')] }, ['egg'])
+  assert.equal(rounded.matchPercentage, 50)
+  assert.equal(qualifies(rounded), false)
+  const empty = getPantryRecipeMatch({ ingredients: [] }, ['egg'])
+  assert.equal(empty.totalCount, 0)
+  assert.equal(empty.matchedCount, 0)
+  assert.equal(empty.matchPercentage, 0)
+  assert.deepEqual(empty.missingIngredients, [])
+  assert.equal(qualifies(empty), false)
 })

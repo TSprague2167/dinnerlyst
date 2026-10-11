@@ -1259,3 +1259,40 @@ select:focus {
   .app-header .tab-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .app-header .tab-nav button { padding: 11px 8px; }
 }
+
+/* Pantry view: scoped layout and controls. */
+.pantry-view { min-width: 0; }
+.pantry-intro h2 { margin-bottom: 10px; }
+.pantry-intro p { color: #666; line-height: 1.6; margin: 0; }
+.pantry-add { margin-top: 24px; }
+.pantry-add label { display: block; color: #7c4a35; font-weight: 600; margin-bottom: 8px; }
+.pantry-add-row { display: flex; gap: 10px; }
+.pantry-add-row input { flex: 1; min-width: 0; width: 100%; }
+.pantry-add-button { background: #6b8f71; color: white; padding: 12px 24px; font-weight: 600; }
+.pantry-section { margin-top: 28px; padding-top: 24px; border-top: 1px solid #e7ddd5; }
+.pantry-section h3 { margin: 0 0 14px; color: #7c4a35; }
+.pantry-chip-group { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.pantry-chip, .pantry-staple {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%;
+  padding: 7px 12px; border: 1px solid #d9e0d3; border-radius: 999px;
+  background: #eef2ea; color: #4f6149; font-size: 14px; line-height: 1.4;
+  overflow-wrap: anywhere; text-align: left;
+}
+.pantry-chip > span { min-width: 0; }
+.pantry-remove { flex-shrink: 0; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: transparent; color: #7c4a35; }
+.pantry-staple { background: #fff8f2; border-color: #e7ddd5; color: #7c4a35; flex-wrap: wrap; }
+.pantry-added { font-size: 12px; color: #4f6149; }
+.pantry-staple:disabled { background: #eef2ea; border-color: #d9e0d3; cursor: default; opacity: 1; }
+.pantry-view button:hover { transform: none; }
+.pantry-remove:hover { background: #e0e8da; }
+.pantry-staple:not(:disabled):hover { background: #f1e9e1; }
+.pantry-add-button:hover { background: #597d60; }
+.pantry-view button:focus-visible, .pantry-view input:focus-visible { outline: 2px solid #7c4a35; outline-offset: 3px; }
+.pantry-empty { margin: 0; color: #666; line-height: 1.6; }
+.pantry-view .pantry-match-card { max-width: none; margin: 14px 0; overflow-wrap: anywhere; }
+.pantry-view .pantry-match-card .cook-button { max-width: 100%; white-space: normal; }
+@media (max-width: 600px) {
+  .pantry-add-row { flex-direction: column; }
+  .pantry-add-button { width: 100%; }
+  .pantry-view .pantry-match-card { padding: 16px; }
+}
