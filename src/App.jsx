@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { supabase } from './supabase'
 import './App.css'
+import { discardLegacyCaches, loadPlannerCache, persistPlannerCache, nextAccountOwner, isCurrentAccount } from './accountState'
 import { getPantryRecipeMatch } from './pantry'
 import { refreshWeeklyMeals, rebuildShoppingList, asShoppingItem, isShoppingItemChecked, shoppingCheckIdentities } from './shoppingList'
 import { emptyIngredientRow, getIngredientRows, formatIngredient, rowsFromIngredientStrings, validateIngredientRows } from './ingredients'
@@ -15,6 +16,10 @@ function getRequiredAllergyTags(allergies = []) {
   return allergies.filter((tag) => allergySafeTags.includes(tag))
 }
 
+function plannerStorage() {
+  try { return window.localStorage } catch { return null }
+}
+
 const defaultOnboardingAnswers = () => ({
   householdSize: 2,
   dietPreferences: [],
@@ -25,7 +30,11 @@ const defaultOnboardingAnswers = () => ({
 
 function App() {
   const [session, setSession] = useState(null)
-  const currentSessionRef = useRef(null)
+  const accountRef = useRef({ userId: null, generation: 0 })
+  const [plannerOwner, setPlannerOwner] = useState(null)
+  const userId = session?.user?.id || null
+  const accountGeneration = plannerOwner?.generation ?? null
+  const ownsAccount = useCallback(owner => isCurrentAccount(owner, accountRef.current), [])
   const [authReady, setAuthReady] = useState(false)
   const [authLoadError, setAuthLoadError] = useState(null)
   const [preferenceLoad, setPreferenceLoad] = useState(null)
@@ -46,11 +55,8 @@ function App() {
   const [imageUrl, setImageUrl] = useState("")
   const [pantryItems, setPantryItems] = useState([])
   const [pantryLoadedSession, setPantryLoadedSession] = useState(null)
-  const pantrySnapshotRef = useRef({ session: null, items: [] })
-  const [weeklyMeals, setWeeklyMeals] = useState(() => {
-  const savedMeals = localStorage.getItem("weeklyMeals")
-  return savedMeals ? JSON.parse(savedMeals) : []
-})
+  const pantrySnapshotRef = useRef({ userId: null, items: [] })
+  const [weeklyMeals, setWeeklyMeals] = useState([])
   const weeklyMealsRef = useRef(weeklyMeals)
   const [lockedDays, setLockedDays] = useState([])
   const [recipeUrl, setRecipeUrl] = useState("");
@@ -58,20 +64,11 @@ function App() {
   const [pantrySearch, setPantrySearch] = useState("")
   const [activeTab, setActiveTab] = useState("planner")
   const [category, setCategory] = useState("Dinner")
-  const [shoppingList, setShoppingList] = useState(() => {
-  const saved = localStorage.getItem("shoppingList")
-  return saved ? JSON.parse(saved) : []
-})
+  const [shoppingList, setShoppingList] = useState({})
  const [checkedShoppingItems, setCheckedShoppingItems] = useState([])
 const [onboardingStep, setOnboardingStep] = useState(1)
 const [onboardingAnswers, setOnboardingAnswers] = useState(defaultOnboardingAnswers)
 
-useEffect(() => {
-  localStorage.setItem(
-    "shoppingList",
-    JSON.stringify(shoppingList)
-  )
-}, [shoppingList])
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [imageFile, setImageFile] = useState(null)
   const [selectedCategories, setSelectedCategories] = useState([])
@@ -86,11 +83,58 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
   useEffect(() => {
     let active = true
     let authEventReceived = false
+    function transitionAccount(nextSession) {
+      const nextId = nextSession?.user?.id || null
+      const previous = accountRef.current
+      const owner = nextAccountOwner(previous, nextId)
+      if (owner !== previous) {
+        accountRef.current = owner
+        setPlannerOwner(null)
+        setRecipes([])
+        setRecipeName("")
+        setIngredientRows([emptyIngredientRow()])
+        setInstructions("")
+        setDietTags([])
+        setSelectedCategories([])
+        setEditingRecipeId(null)
+        setRecipeUrl("")
+        setImageUrl("")
+        setImageFile(null)
+        setViewingRecipe(null)
+        setSwapOptions(null)
+        setPantryItems([])
+        setPantryLoadedSession(null)
+        pantrySnapshotRef.current = { userId: null, items: [] }
+        setCheckedShoppingItems([])
+        setOnboardingAnswers(defaultOnboardingAnswers())
+        setOnboardingStep(1)
+        setPreferenceLoad(null)
+        setPreferenceRetry(0)
+        setSearchTerm("")
+        setPantrySearch("")
+        setSelectedCategory("All")
+        setCategory("Dinner")
+        setActiveTab("planner")
+        setTouchStartX(null)
+        setTouchEndX(null)
+        setSwipingDay(null)
+        setSwipeOffsetX(0)
+        setAuthEmail("")
+        setAuthPassword("")
+        const planner = loadPlannerCache(plannerStorage(), nextId)
+        weeklyMealsRef.current = planner.weeklyMeals
+        setWeeklyMeals(planner.weeklyMeals)
+        setShoppingList(planner.shoppingList)
+        setLockedDays(planner.lockedDays)
+        if (nextId) setPlannerOwner(owner)
+      }
+      setSession(nextSession)
+    }
+    discardLegacyCaches(plannerStorage())
     supabase.auth.getSession().then(({ data, error }) => {
       if (!active || authEventReceived) return
       setAuthLoadError(error?.message || null)
-      currentSessionRef.current = data?.session || null
-      setSession(data?.session || null)
+      transitionAccount(data?.session || null)
       setAuthReady(true)
     }).catch((error) => {
       if (!active || authEventReceived) return
@@ -101,8 +145,7 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       authEventReceived = true
       setAuthLoadError(null)
-      currentSessionRef.current = session
-      setSession(session)
+      transitionAccount(session)
       setAuthReady(true)
     })
 
@@ -114,39 +157,45 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
   useEffect(() => {
     let active = true
     async function loadPantryItems() {
-      pantrySnapshotRef.current = { session, items: [] }
+      const owner = accountRef.current
+      if (owner.userId !== userId || (userId && owner.generation !== accountGeneration)) return
+      pantrySnapshotRef.current = { userId, items: [] }
       setPantryItems([])
       setPantryLoadedSession(null)
-      if (!session?.user?.id) return
+      if (!userId) return
       try {
         const { data, error } = await supabase
           .from("pantry_items")
           .select("item_name")
-          .eq("user_id", session.user.id)
-        if (!active) return
+          .eq("user_id", owner.userId)
+        if (!active || !ownsAccount(owner)) return
         if (error) throw error
         const items = (data || []).map((item) => item.item_name)
-        pantrySnapshotRef.current = { session, items }
+        pantrySnapshotRef.current = { userId, items }
         setPantryItems(items)
-        setPantryLoadedSession(session)
+        setPantryLoadedSession(userId)
       } catch (error) {
-        if (active) console.error("Error loading pantry items:", error)
+        if (active && ownsAccount(owner)) console.error("Error loading pantry items:", error)
       }
     }
     loadPantryItems()
     return () => { active = false }
-  }, [session])
+  }, [userId, accountGeneration, ownsAccount])
   useEffect(() => {
     async function rebuildForPantry() {
-      if (!session || pantryLoadedSession !== session) return
-      pantrySnapshotRef.current = { session, items: pantryItems }
-      setShoppingList((previous) => rebuildShoppingList(previous, weeklyMeals, weeklyMeals, pantryItems))
+      if (!plannerOwner || !ownsAccount(plannerOwner) || !userId || pantryLoadedSession !== userId) return
+      pantrySnapshotRef.current = { userId, items: pantryItems }
+      const owner = accountRef.current
+      setShoppingList((previous) => ownsAccount(owner) ? rebuildShoppingList(previous, weeklyMeals, weeklyMeals, pantryItems) : previous)
     }
     rebuildForPantry()
-  }, [session, pantryLoadedSession, pantryItems, weeklyMeals])
+  }, [userId, plannerOwner, pantryLoadedSession, pantryItems, weeklyMeals, ownsAccount])
 useEffect(() => {
+  let active = true
   async function loadCheckedShoppingItems() {
-    if (!session?.user?.id) {
+    const owner = accountRef.current
+    if (owner.userId !== userId || (userId && owner.generation !== accountGeneration)) return
+    if (!userId) {
       setCheckedShoppingItems([])
       return
     }
@@ -154,8 +203,9 @@ useEffect(() => {
     const { data, error } = await supabase
       .from("checked_shopping_items")
       .select("item_name")
-      .eq("user_id", session.user.id)
+      .eq("user_id", owner.userId)
 
+    if (!active || !ownsAccount(owner)) return
     if (error) {
       console.error("Error loading checked shopping items:", error)
       return
@@ -167,26 +217,21 @@ useEffect(() => {
   }
 
   loadCheckedShoppingItems()
-}, [session])
+  return () => { active = false }
+}, [userId, accountGeneration, ownsAccount])
 
   useEffect(() => {
-  weeklyMealsRef.current = weeklyMeals
-  localStorage.setItem(
-    "weeklyMeals",
-    JSON.stringify(weeklyMeals)
-  )
-}, [weeklyMeals])
-
-  useEffect(() => {
-    if (session) {
-      getRecipes()
-    }
-  }, [session])
+    if (!plannerOwner || !ownsAccount(plannerOwner)) return
+    weeklyMealsRef.current = weeklyMeals
+    persistPlannerCache(plannerStorage(), plannerOwner, accountRef.current, { weeklyMeals, shoppingList, lockedDays })
+  }, [weeklyMeals, shoppingList, lockedDays, plannerOwner, ownsAccount])
 
   useEffect(() => {
     let active = true
     async function loadPreferences() {
-      if (!session?.user?.id) {
+      const owner = accountRef.current
+      if (owner.userId !== userId || (userId && owner.generation !== accountGeneration)) return
+      if (!userId) {
         setOnboardingAnswers(defaultOnboardingAnswers())
         setOnboardingStep(1)
         setPreferenceLoad(null)
@@ -194,14 +239,14 @@ useEffect(() => {
       }
       setOnboardingAnswers(defaultOnboardingAnswers())
       setOnboardingStep(1)
-      setPreferenceLoad({ session, status: "loading" })
+      setPreferenceLoad({ userId, status: "loading" })
       try {
         const { data, error } = await supabase
           .from("user_preferences")
           .select("*")
-          .eq("user_id", session.user.id)
+          .eq("user_id", owner.userId)
           .maybeSingle()
-        if (!active) return
+        if (!active || !ownsAccount(owner)) return
         if (error) throw error
         if (data) {
           setOnboardingAnswers({
@@ -213,22 +258,24 @@ useEffect(() => {
           })
         }
         setOnboardingStep(data ? 0 : 1)
-        setPreferenceLoad({ session, status: "ready" })
+        setPreferenceLoad({ userId, status: "ready" })
       } catch (error) {
-        if (!active) return
+        if (!active || !ownsAccount(owner)) return
         console.error("Error loading preferences:", error)
-        setPreferenceLoad({ session, status: "error", message: error.message })
+        setPreferenceLoad({ userId, status: "error", message: error.message })
       }
     }
     loadPreferences()
     return () => { active = false }
-  }, [session, preferenceRetry])
+  }, [userId, accountGeneration, preferenceRetry, ownsAccount])
 
   async function signUp() {
+    const owner = accountRef.current
     const { error } = await supabase.auth.signUp({
       email: authEmail,
       password: authPassword
     })
+    if (!ownsAccount(owner)) return
 
     if (error) {
       alert(error.message)
@@ -240,10 +287,12 @@ useEffect(() => {
   }
 
   async function login() {
+    const owner = accountRef.current
     const { error } = await supabase.auth.signInWithPassword({
       email: authEmail,
       password: authPassword
     })
+    if (!ownsAccount(owner)) return
 
     if (error) {
       alert(error.message)
@@ -255,15 +304,15 @@ useEffect(() => {
   }
 
   async function logout() {
+    if (!plannerOwner || !ownsAccount(plannerOwner)) return
     await supabase.auth.signOut()
-    setRecipes([])
-    setWeeklyMeals([])
-    setShoppingList([])
   }
 
-  async function getRecipes() {
+  const getRecipes = useCallback(async (owner = accountRef.current) => {
+    if (!owner.userId || !ownsAccount(owner)) return
     const { data, error } = await supabase.from('recipes').select('*')
- .or(`user_id.eq.${session.user.id},user_id.is.null`)
+ .or(`user_id.eq.${owner.userId},user_id.is.null`)
+    if (!ownsAccount(owner)) return
     if (error) {
       console.log(error)
       return
@@ -288,17 +337,25 @@ useEffect(() => {
     if (previousMeals.length) {
       const refreshed = refreshWeeklyMeals(previousMeals, savedRecipes)
       setWeeklyMeals(refreshed)
-      setShoppingList((previous) => rebuildShoppingList(previous, previousMeals, refreshed, pantrySnapshotRef.current.session === session ? pantrySnapshotRef.current.items : []))
+      setShoppingList((previous) => ownsAccount(owner) ? rebuildShoppingList(previous, previousMeals, refreshed, pantrySnapshotRef.current.userId === owner.userId ? pantrySnapshotRef.current.items : []) : previous)
     }
-  }
-async function uploadRecipeImage(file) {
+  }, [ownsAccount])
+  useEffect(() => {
+    const owner = accountRef.current
+    if (userId && owner.userId === userId && owner.generation === accountGeneration) getRecipes(owner)
+  }, [userId, accountGeneration, getRecipes])
+
+async function uploadRecipeImage(file, owner) {
+  if (!ownsAccount(owner)) return ""
   if (!file) return ""
 
- const fileName = `${session.user.id}/${Date.now()}-${file.name}`
+ const fileName = `${owner.userId}/${Date.now()}-${file.name}`
 
   const { error } = await supabase.storage
     .from("recipe-images")
     .upload(fileName, file)
+
+  if (!ownsAccount(owner)) return ""
 
   if (error) {
     alert(error.message)
@@ -313,6 +370,8 @@ async function uploadRecipeImage(file) {
   return data.publicUrl
 }
 async function importRecipeFromUrl() {
+  const owner = plannerOwner
+  if (!owner?.userId || !ownsAccount(owner)) return
   if (!recipeUrl.trim()) {
     alert("Paste a recipe URL first.")
     return
@@ -321,6 +380,7 @@ async function importRecipeFromUrl() {
   const { data, error } = await supabase.functions.invoke("import-recipe", {
     body: { url: recipeUrl }
   })
+  if (!ownsAccount(owner)) return
 
   if (error) {
     console.error(error)
@@ -342,6 +402,8 @@ async function importRecipeFromUrl() {
   }
 }
   async function addRecipe() {
+    const owner = plannerOwner
+    if (!owner?.userId || !ownsAccount(owner)) return
     
 
    const { rows, error: ingredientError } = validateIngredientRows(ingredientRows)
@@ -354,9 +416,10 @@ async function importRecipeFromUrl() {
     let uploadedImageUrl = imageUrl
 
 if (imageFile) {
-  uploadedImageUrl = await uploadRecipeImage(imageFile)
+  uploadedImageUrl = await uploadRecipeImage(imageFile, owner)
 }
 
+    if (!ownsAccount(owner)) return
     let data, error
 
 if (editingRecipeId) {
@@ -372,6 +435,7 @@ if (editingRecipeId) {
       diet_tags: dietTags,
     })
     .eq('id', (editingRecipeId))
+    .eq('user_id', owner.userId)
 
     .select("*")
     
@@ -391,7 +455,7 @@ if (editingRecipeId) {
         instructions,
         categories: selectedCategories,
         image_url: uploadedImageUrl,
-        user_id: session.user.id,
+        user_id: owner.userId,
         diet_tags: dietTags
       }
     ])
@@ -401,13 +465,15 @@ if (editingRecipeId) {
   error = result.error
 }
 
+    if (!ownsAccount(owner)) return
     if (error) {
       console.log(error)
       alert(error.message)
       return
     }
 
-    await getRecipes()
+    await getRecipes(owner)
+    if (!ownsAccount(owner)) return
 
 setRecipeName("")
 setSelectedCategories([])
@@ -420,7 +486,10 @@ window.location.reload()
   }
 
   async function deleteRecipe(id) {
-    const { error } = await supabase.from('recipes').delete().eq('id', id)
+    const owner = plannerOwner
+    if (!owner?.userId || !ownsAccount(owner)) return
+    const { error } = await supabase.from('recipes').delete().eq('id', id).eq('user_id', owner.userId)
+    if (!ownsAccount(owner)) return
 
     if (error) {
       console.log(error)
@@ -672,7 +741,7 @@ const pantryMatches = recipes
     return updatedList
   })
 }
-  if (!authReady || (session && (preferenceLoad?.session !== session || preferenceLoad.status === "loading"))) {
+  if (!authReady || (session && (plannerOwner?.userId !== userId)) || (session && (preferenceLoad?.userId !== userId || preferenceLoad.status === "loading"))) {
     return <div className="app" role="status">Loading Dinnerlyst…</div>
   }
   if (authLoadError) {
@@ -730,11 +799,12 @@ const pantryMatches = recipes
       </div>
     )
   }
-  const savePreferences = async () => {
+  const savePreferences = async (owner = plannerOwner) => {
+    if (!owner?.userId || !ownsAccount(owner)) return false
     const { error } = await supabase
       .from("user_preferences")
       .upsert({
-        user_id: session.user.id,
+        user_id: owner.userId,
         household_size: onboardingAnswers.householdSize,
         diet_preferences: onboardingAnswers.dietPreferences,
         allergies: onboardingAnswers.allergies.filter(Boolean),
@@ -742,6 +812,7 @@ const pantryMatches = recipes
         cooking_style: onboardingAnswers.cookingStyle
       }, { onConflict: "user_id" })
 
+    if (!ownsAccount(owner)) return false
     if (error) {
       console.error("Error saving preferences:", error)
       return false
@@ -1101,10 +1172,10 @@ if (onboardingStep === 5) {
         <button
   className="onboarding-continue"
  onClick={async () => {
-const completingSession = session
-const saved = await savePreferences()
+const owner = plannerOwner
+const saved = await savePreferences(owner)
 
-if (!saved || currentSessionRef.current !== completingSession) return
+if (!saved || !ownsAccount(owner)) return
 
     setOnboardingStep(0)
   }}
@@ -1197,7 +1268,7 @@ if (!saved || currentSessionRef.current !== completingSession) return
       <label>Recipe photo</label>
       <input
         type="file"
-        key={editingRecipeId || "new-recipe"}
+        key={`${userId}:${accountGeneration}:${editingRecipeId || "new-recipe"}`}
         accept="image/*"
         onChange={(e) => setImageFile(e.target.files[0])}
       />
@@ -1954,35 +2025,40 @@ if (!saved || currentSessionRef.current !== completingSession) return
   type="checkbox"
   checked={isShoppingItemChecked(ingredient, checkedShoppingItems)}
   onChange={async (e) => {
+    const owner = plannerOwner
+    if (!owner?.userId || !ownsAccount(owner)) return
     if (e.target.checked) {
       const { error } = await supabase
   .from("checked_shopping_items")
   .insert({
-    user_id: session.user.id,
+    user_id: owner.userId,
     item_name: asShoppingItem(ingredient).key,
   })
 
+if (!ownsAccount(owner)) return
 if (error) {
   console.error("Error saving checked item:", error)
   return
 }
-      setCheckedShoppingItems((current) => [...new Set([...current, asShoppingItem(ingredient).key])])
+      setCheckedShoppingItems((current) => ownsAccount(owner) ? [...new Set([...current, asShoppingItem(ingredient).key])] : current)
     } else {
       const identities = shoppingCheckIdentities(ingredient)
       // Exact equality avoids PostgREST IN quoting of JSON-based canonical keys.
       for (const identity of identities) {
+        if (!ownsAccount(owner)) return
         const { error } = await supabase
           .from("checked_shopping_items")
           .delete()
-          .eq("user_id", session.user.id)
+          .eq("user_id", owner.userId)
           .eq("item_name", identity)
 
+        if (!ownsAccount(owner)) return
         if (error) {
           console.error("Error removing checked item:", error)
           return
         }
       }
-      setCheckedShoppingItems((current) => current.filter((item) => !identities.includes(item)))
+      setCheckedShoppingItems((current) => ownsAccount(owner) ? current.filter((item) => !identities.includes(item)) : current)
     }
   }}
 />
@@ -2002,6 +2078,8 @@ if (error) {
       <p>Save ingredients you have on hand. Dinnerlyst won’t add them to your generated shopping list.</p>
     </div>
     <form className="pantry-add" onSubmit={async (e) => {
+  const owner = plannerOwner
+  if (!owner?.userId || !ownsAccount(owner)) return
   e.preventDefault()
   if (pantrySearch.trim()) {
     const newItem = pantrySearch.trim()
@@ -2010,10 +2088,11 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
   const { error } = await supabase
     .from("pantry_items")
     .insert({
-      user_id: session.user.id,
+      user_id: owner.userId,
       item_name: newItem
     })
 
+  if (!ownsAccount(owner)) return
   if (!error) {
     setPantryItems([...pantryItems, newItem])
   } else {
@@ -2051,12 +2130,15 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
       aria-label={`Remove ${item}`}
       onClick={async () =>
        {
+  const owner = plannerOwner
+  if (!owner?.userId || !ownsAccount(owner)) return
   const { error } = await supabase
     .from("pantry_items")
     .delete()
-    .eq("user_id", session.user.id)
+    .eq("user_id", owner.userId)
     .eq("item_name", item)
 
+  if (!ownsAccount(owner)) return
   if (!error) {
     setPantryItems(
       pantryItems.filter((pantryItem) => pantryItem !== item)
@@ -2097,14 +2179,17 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
     className="pantry-staple"
     disabled={pantryItems.includes(item)}
     onClick={async () => {
+     const owner = plannerOwner
+     if (!owner?.userId || !ownsAccount(owner)) return
      if (!pantryItems.includes(item) && session?.user?.id) {
   const { error } = await supabase
     .from("pantry_items")
     .insert({
-      user_id: session.user.id,
+      user_id: owner.userId,
       item_name: item
     })
 
+  if (!ownsAccount(owner)) return
   if (!error) {
     setPantryItems([...pantryItems, item])
   } else {

@@ -101,7 +101,7 @@ export function refreshWeeklyMeals(meals, recipes) {
   const byId = new Map(recipes.map(recipe => [String(recipe.id), recipe]))
   return meals.map(item => {
     const current = item.meal && byId.get(String(item.meal.id))
-    return current && current !== item.meal ? { ...item, meal: current } : item
+    return item.meal ? { ...item, meal: current || null } : item
   })
 }
 
