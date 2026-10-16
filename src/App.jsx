@@ -54,6 +54,7 @@ function App() {
   const [viewingRecipe, setViewingRecipe] = useState(null)
   const [expandedRecipeId, setExpandedRecipeId] = useState(null)
   const [pantryAddFeedback, setPantryAddFeedback] = useState({})
+  const [bestMatchFeedback, setBestMatchFeedback] = useState(null)
   const [swapOptions, setSwapOptions] = useState(null)
   const [touchStartX, setTouchStartX] = useState(null)
   const [touchEndX, setTouchEndX] = useState(null)
@@ -110,6 +111,7 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
         setViewingRecipe(null)
         setExpandedRecipeId(null)
         setPantryAddFeedback({})
+        setBestMatchFeedback(null)
         setSwapOptions(null)
         setPantryItems([])
         setPantryLoadedSession(null)
@@ -675,6 +677,11 @@ if (recipePool.length === 0) return item
   setWeeklyMeals(updatedMeals)
   createShoppingList(updatedMeals)
 }
+function meetsPlanningPreferences(recipe) {
+  const tags = recipe.diet_tags || []
+  return getRequiredAllergyTags(onboardingAnswers.allergies).every(tag => tags.includes(tag)) &&
+    (onboardingAnswers.dietPreferences || []).every(tag => tags.includes(tag))
+}
 function cookTonight(recipe) {
   if (!recipe) return
 
@@ -689,11 +696,30 @@ function cookTonight(recipe) {
     return
   }
 
+  if (lockedDays.includes(today)) {
+    alert("Tonight's meal is locked. Unlock it before changing it.")
+    return
+  }
+  // Recheck the current library and preferences instead of trusting a displayed snapshot.
+  const currentRecipe = recipes.find(item => item.id === recipe.id)
+  if (!currentRecipe || !meetsPlanningPreferences(currentRecipe)) {
+    alert("This recipe no longer matches your meal preferences or restrictions.")
+    return
+  }
+  if (weeklyMeals.some(item => item.day !== today && item.meal?.id === currentRecipe.id)) {
+    alert("This recipe is already planned for another day.")
+    return
+  }
+  if (weeklyMeals.some(item => item.day === today && item.meal?.id === currentRecipe.id)) {
+    alert("This recipe is already planned for tonight.")
+    return
+  }
+
   const updatedMeals = weeklyMeals.map((item) =>
     item.day === today
       ? {
           ...item,
-          meal: recipe
+          meal: currentRecipe
         }
       : item
   )
@@ -704,30 +730,12 @@ function cookTonight(recipe) {
 function createShoppingList(meals) {
   setShoppingList((previous) => rebuildShoppingList(previous, weeklyMeals, meals, pantryItems))
 }
+const today = new Date().toLocaleDateString("en-US", { weekday: "long" })
+const plannedOnOtherDays = new Set(weeklyMeals.filter(item => item.day !== today).map(item => item.meal?.id))
 const pantryMatches = recipes
-  .map((recipe) => {
-    const matchedIngredients = recipe.ingredients.filter((ingredient) =>
-      pantryItems.some((item) =>
-        ingredient.toLowerCase().includes(item.toLowerCase())
-      )
-    )
-
-    return {
-      ...recipe,
-      matchedCount: matchedIngredients.length,
-      totalCount: recipe.ingredients.length,
-      matchPercentage: Math.round(
-        (matchedIngredients.length / recipe.ingredients.length) * 100
-      ),
-      missingIngredients: recipe.ingredients.filter(
-        (ingredient) =>
-          !pantryItems.some((item) =>
-            ingredient.toLowerCase().includes(item.toLowerCase())
-          )
-      )
-    }
-  })
-  .filter((recipe) => recipe.matchedCount > 0)
+  .filter(recipe => meetsPlanningPreferences(recipe) && !plannedOnOtherDays.has(recipe.id))
+  .map(recipe => getPantryRecipeMatch(recipe, pantryItems))
+  .filter(recipe => recipe.totalCount > 0 && recipe.matchedCount > 0)
   .sort((a, b) => b.matchPercentage - a.matchPercentage)
   const pantryViewMatches = recipes
     .map(recipe => getPantryRecipeMatch(recipe, pantryItems))
@@ -1733,23 +1741,23 @@ if (!saved || !ownsAccount(owner)) return
   <p className="best-match-label">⭐ Tonight's Best Match</p>
 
   <h3>
-  {pantryMatches[0]?.name || "Add pantry items to get a recommendation"}
+  {pantryMatches[0]?.name || "No suitable recommendation right now"}
 </h3>
 
   <div className="progress-bar">
     <div
   className="progress-fill"
   style={{
-    width: `${pantryMatches[0]?.matchPercentage || 0}%`
+    width: `${pantryMatches[0] ? (pantryMatches[0].missingIngredients.length === 0 ? 100 : Math.min(pantryMatches[0].matchPercentage, 99)) : 0}%`
   }}
 ></div>
   </div>
 
   <p className="progress-text">
   {pantryMatches[0]
-    ? pantryMatches[0].matchPercentage === 100
+    ? pantryMatches[0].missingIngredients.length === 0
       ? "🎉 100% Ready — You can make this!"
-      : `${pantryMatches[0].matchPercentage}% Ready`
+      : `${Math.min(pantryMatches[0].matchPercentage, 99)}% Ready`
     : "No match yet"}
 </p>
 
@@ -1767,18 +1775,33 @@ if (!saved || !ownsAccount(owner)) return
   pantryMatches[0] ? (
   <p>✅ You have everything you need!</p>
 ) : (
-  <p>Add a few pantry items and I’ll find your best match.</p>
+  <p>No recipe currently matches your preferences, restrictions, weekly plan, and pantry ingredients.</p>
 )
 )}
   {pantryMatches[0]?.missingIngredients?.length > 0 && (
   <button
     className="cook-button"
-    onClick={() =>
-      addMissingToShoppingList(pantryMatches[0].missingIngredients)
-    }
+    onClick={() => {
+      const match = pantryMatches[0]
+      const alreadyPresent = match.missingIngredients.every(ingredient =>
+        (shoppingList.Other || []).some(item => asShoppingItem(item).label === ingredient)
+      )
+      addMissingToShoppingList(match.missingIngredients)
+      setBestMatchFeedback({
+        recipeId: match.id,
+        ingredients: JSON.stringify(match.missingIngredients),
+        message: alreadyPresent ? "✓ Already on Shopping List" : "✓ Added to Shopping List"
+      })
+    }}
   >
     🛒 Add Missing to Shopping List
   </button>
+)}
+
+{pantryMatches[0]?.missingIngredients?.length > 0 &&
+  bestMatchFeedback?.recipeId === pantryMatches[0].id &&
+  bestMatchFeedback.ingredients === JSON.stringify(pantryMatches[0].missingIngredients) && (
+    <p role="status">{bestMatchFeedback.message}</p>
 )}
 
 {pantryMatches[0]?.missingIngredients?.length === 0 && (

@@ -66,7 +66,7 @@ test('successful reconciliation clears unavailable recipes and preserves assignm
 // Exercise the actual App handlers/effects without a browser or live Supabase.
 // JSX is compiled using the project's existing build dependency; hooks and network
 // completion are deterministic so responses can arrive in arbitrary account order.
-function appHarness(storage = memoryStorage()) {
+function appHarness(storage = memoryStorage(), weekday = null) {
   const hooks = [], requests = [], alerts = []
   let index = 0, dirty = true, tree, snapshot, listener, effects = [], reloads = 0
   const same = (a, b) => a && b && a.length === b.length && a.every((value, i) => Object.is(value, b[i]))
@@ -118,11 +118,11 @@ function appHarness(storage = memoryStorage()) {
     storage: { from: () => ({ upload: path => request({ table: 'images', method: 'upload', path }), getPublicUrl: path => ({ data: { publicUrl: path } }) }) },
   }
   let source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8').replace(/^import .*\n/gm, '').replace('export default App', '')
-  source = source.replace('  if (!authReady ||', '  observe({ session, weeklyMeals, shoppingList, lockedDays, recipes, recipeName, ingredientRows, instructions, dietTags, selectedCategories, editingRecipeId, recipeUrl, imageUrl, imageFile, viewingRecipe, expandedRecipeId, swapOptions, pantryItems, checkedShoppingItems, onboardingAnswers, onboardingStep, searchTerm, pantrySearch, activeTab, selectedCategory, swipingDay, generateWeeklyMeals, regenerateMeal, getRecipes, addRecipe, importRecipeFromUrl, deleteRecipe, logout });\n  if (!authReady ||')
+  source = source.replace('  if (!authReady ||', '  observe({ session, weeklyMeals, shoppingList, lockedDays, recipes, recipeName, ingredientRows, instructions, dietTags, selectedCategories, editingRecipeId, recipeUrl, imageUrl, imageFile, viewingRecipe, expandedRecipeId, swapOptions, pantryItems, checkedShoppingItems, onboardingAnswers, onboardingStep, searchTerm, pantrySearch, activeTab, selectedCategory, swipingDay, generateWeeklyMeals, regenerateMeal, cookTonight, getRecipes, addRecipe, importRecipeFromUrl, deleteRecipe, logout });\n  if (!authReady ||')
   const helpers = { ...account, ...shopping, ...ingredients, ...pantry }
   const code = transformSync('App.jsx', source, { jsx: { runtime: 'classic' } }).code
-  const App = new Function('React', 'useState', 'useRef', 'useEffect', 'useCallback', 'supabase', 'observe', 'window', 'alert', ...Object.keys(helpers), code + '\nreturn App')(
-    React, React.useState, React.useRef, React.useEffect, React.useCallback, supabase, value => { snapshot = value }, { localStorage: storage, location: { reload() { reloads++ } } }, message => alerts.push(message), ...Object.values(helpers))
+  const App = new Function('React', 'useState', 'useRef', 'useEffect', 'useCallback', 'supabase', 'observe', 'window', 'alert', 'Date', ...Object.keys(helpers), code + '\nreturn App')(
+    React, React.useState, React.useRef, React.useEffect, React.useCallback, supabase, value => { snapshot = value }, { localStorage: storage, location: { reload() { reloads++ } } }, message => alerts.push(message), class extends Date { toLocaleDateString(...args) { return weekday || super.toLocaleDateString(...args) } }, ...Object.values(helpers))
   function flush() {
     let iterations = 0
     while (dirty) {
@@ -138,13 +138,13 @@ function appHarness(storage = memoryStorage()) {
     else if (value && typeof value === 'object') { result.push(value); nodes(value.props?.children, result) }
     return result
   }
-  async function ready(id, library = [recipe(id === 'A' ? 87 : 88), recipe(57)], preferences = { household_size: 2 }) {
+  async function ready(id, library = [recipe(id === 'A' ? 87 : 88), recipe(57)], preferences = { household_size: 2 }, pantryNames = []) {
     const start = requests.length
     emit(id); await pump()
     const ownerRequests = requests.slice(start).filter(item => !item.settled && ['recipes', 'pantry_items', 'user_preferences', 'checked_shopping_items'].includes(item.table))
     for (const req of ownerRequests) {
       req.settled = true
-      req.resolve({ data: req.table === 'recipes' ? library : req.table === 'user_preferences' ? (preferences == null ? null : { household_size: 2, ...preferences }) : [], error: null })
+      req.resolve({ data: req.table === 'pantry_items' ? pantryNames.map(item_name => ({ item_name })) : req.table === 'recipes' ? library : req.table === 'user_preferences' ? (preferences == null ? null : { household_size: 2, ...preferences }) : [], error: null })
     }
     await pump()
   }
@@ -621,4 +621,137 @@ test('Pantry Add Missing feedback is per-card; repeats preserve Bread and pantry
   assert.deepEqual(reloaded.nodes().filter(node => node.props?.className === 'shopping-item').map(nodeText), ['Bread'])
   await app.ready('B', [grilled]); clickButton(app, '🥫 Pantry')
   assert.equal(app.nodes().some(node => node.props?.role === 'status'), false)
+})
+
+
+const bestCard = app => app.nodes().find(node => node.props?.className === 'best-match-card')
+const bestButton = (app, text) => app.nodes(bestCard(app)).find(node => node.type === 'button' && nodeText(node).includes(text))
+async function bestApp({ library, pantryNames = [], preferences = {}, meals = [], locks = [], shoppingList = {} }) {
+  const storage = memoryStorage(), owner = { userId: 'A', generation: 1 }
+  account.persistPlannerCache(storage, owner, owner, { weeklyMeals: meals, shoppingList, lockedDays: locks })
+  const app = appHarness(storage, 'Thursday')
+  await app.ready('A', library, preferences, pantryNames)
+  return app
+}
+const bestRecipe = (id, name, ingredients, diet_tags = []) => ({ ...recipe(id, name), ingredients, diet_tags })
+
+test('Best Match uses conservative names and supported aliases without changing Pantry threshold', async () => {
+  for (const name of ['Cauliflower rice', 'rice vinegar']) {
+    const app = await bestApp({ library: [bestRecipe(1, name, [name])], pantryNames: ['Rice'] })
+    assert.ok(nodeText(bestCard(app)).includes('No suitable recommendation right now'))
+    assert.equal(bestButton(app, 'Cook Tonight'), undefined)
+  }
+  const alias = await bestApp({ library: [bestRecipe(2, 'Egg meal', ['eggs'])], pantryNames: [' EGG '] })
+  assert.ok(nodeText(bestCard(alias)).includes('You can make this!'))
+  // Best Match retains its existing positive-match threshold, independent of Pantry's 50%.
+  const belowHalf = await bestApp({ library: [bestRecipe(3, 'Small match', ['eggs', 'rice', 'milk'])], pantryNames: ['Egg'] })
+  assert.ok(nodeText(bestCard(belowHalf)).includes('33% Ready'))
+  clickButton(belowHalf, '🥫 Pantry')
+  assert.equal(belowHalf.nodes().some(node => node.props?.className === 'pantry-match-card'), false)
+})
+
+test('Best Match combines every diet and restriction tag for shared and personal recipes', async () => {
+  const tags = ['Vegan', 'High Protein', 'Peanut-Free', 'Dairy-Free']
+  const preferences = { diet_preferences: tags.slice(0, 2), allergies: [...tags.slice(2), 'sesame'] }
+  for (const user_id of [null, 'A']) {
+    const incomplete = tags.map((_, at) => ({ ...bestRecipe(at + 1, `Missing tag ${at}`, ['Eggs'], tags.filter((_, index) => index !== at)), user_id }))
+    const valid = { ...bestRecipe(9, 'Eligible meal', ['Eggs'], tags), user_id }
+    const app = await bestApp({ library: [...incomplete, valid], preferences, pantryNames: ['Eggs'] })
+    assert.equal(app.nodes(bestCard(app)).find(node => node.type === 'h3').props.children[0], 'Eligible meal')
+    assert.ok(app.requests.find(req => req.table === 'recipes').filter.includes('user_id.is.null'))
+    const none = await bestApp({ library: incomplete, preferences, pantryNames: ['Eggs'] })
+    assert.ok(nodeText(bestCard(none)).includes('No recipe currently matches your preferences, restrictions, weekly plan, and pantry ingredients.'))
+    assert.equal(bestButton(none, 'Cook Tonight'), undefined)
+  }
+})
+
+test('Best Match and Cook Tonight reject other-day duplicates, locks, stale recipes and incompatible tags', async () => {
+  const old = bestRecipe(1, 'Old meal', ['Rice'])
+  const candidate = bestRecipe(2, 'Egg meal', ['Eggs'], ['Vegan', 'Peanut-Free'])
+  const meals = [{ day: 'Thursday', meal: old }, { day: 'Monday', meal: candidate }]
+  const duplicate = await bestApp({ library: [old, candidate], meals, pantryNames: ['Eggs'] })
+  assert.ok(nodeText(bestCard(duplicate)).includes('No suitable recommendation right now'))
+  const before = structuredClone(duplicate.state.weeklyMeals)
+  duplicate.state.cookTonight(candidate); duplicate.flush()
+  assert.deepEqual(duplicate.state.weeklyMeals, before)
+  assert.ok(duplicate.alerts.at(-1).includes('another day'))
+  const locked = await bestApp({ library: [old, candidate], meals: [meals[0]], locks: ['Thursday'], pantryNames: ['Eggs'] })
+  const lockedBefore = structuredClone(locked.state.weeklyMeals)
+  bestButton(locked, 'Cook Tonight').props.onClick(); locked.flush()
+  assert.deepEqual(locked.state.weeklyMeals, lockedBefore)
+  assert.deepEqual(locked.state.lockedDays, ['Thursday'])
+  assert.ok(locked.alerts.at(-1).includes('locked'))
+  for (const tags of [[], ['Vegan'], ['Peanut-Free']]) {
+    const invalid = { ...candidate, diet_tags: tags }
+    const app = await bestApp({ library: [old, invalid], meals: [meals[0]], preferences: { allergies: ['Peanut-Free'], diet_preferences: ['Vegan'] }, pantryNames: ['Eggs'] })
+    const unchanged = structuredClone(app.state.weeklyMeals)
+    // Supplying a stale or forged eligible object must not bypass the current library tags.
+    app.state.cookTonight(candidate); app.flush()
+    assert.deepEqual(app.state.weeklyMeals, unchanged)
+    app.state.cookTonight({ ...candidate, id: 999 }); app.flush()
+    assert.deepEqual(app.state.weeklyMeals, unchanged)
+  }
+  const changed = await bestApp({ library: [old, candidate], meals: [meals[0]], pantryNames: ['Eggs'] })
+  clickButton(changed, '⚙️ Settings / Preferences'); clickButton(changed, 'Dairy-Free')
+  changed.state.cookTonight(candidate); changed.flush()
+  assert.equal(changed.state.weeklyMeals[0].meal.id, old.id)
+})
+
+test('Cook Tonight targets today only, rebuilds shopping, persists, and safely handles already-planned or missing days', async () => {
+  const old = { ...bestRecipe(1, 'Old meal', []), structured_ingredients: [{ amount: '1', unit: 'cup', ingredient: 'Rice' }] }
+  const other = bestRecipe(3, 'Other meal', ['Milk'])
+  const candidate = bestRecipe(2, 'Egg meal', ['Eggs'])
+  const app = await bestApp({ library: [old, candidate, other], meals: [{ day: 'Thursday', meal: old }, { day: 'Monday', meal: other }], pantryNames: ['Eggs'], shoppingList: { Other: [{ key: 'paper towels', label: 'paper towels', extra: true }] } })
+  const monday = structuredClone(app.state.weeklyMeals.find(item => item.day === 'Monday'))
+  bestButton(app, 'Cook Tonight').props.onClick(); app.flush()
+  assert.equal(app.state.weeklyMeals.find(item => item.day === 'Thursday').meal.id, candidate.id)
+  assert.deepEqual(app.state.weeklyMeals.find(item => item.day === 'Monday'), monday)
+  const visible = Object.values(app.state.shoppingList).flat().filter(item => !item.pantryHidden).map(item => item.label)
+  assert.ok(visible.includes('paper towels'))
+  assert.ok(visible.includes('milk (1)'))
+  assert.equal(visible.some(label => label.includes('Rice') || label.includes('Eggs')), false)
+  assert.equal(JSON.parse(app.storage.getItem(account.plannerCacheKey('A'))).weeklyMeals.find(item => item.day === 'Thursday').meal.id, candidate.id)
+  const unchanged = structuredClone(app.state.weeklyMeals)
+  app.state.cookTonight(candidate); app.flush()
+  assert.deepEqual(app.state.weeklyMeals, unchanged)
+  assert.ok(app.alerts.at(-1).includes('already planned for tonight'))
+  const noToday = await bestApp({ library: [candidate, other], meals: [{ day: 'Monday', meal: other }], pantryNames: ['Eggs'] })
+  const before = structuredClone(noToday.state.weeklyMeals)
+  bestButton(noToday, 'Cook Tonight').props.onClick(); noToday.flush()
+  assert.deepEqual(noToday.state.weeklyMeals, before)
+  assert.deepEqual(noToday.alerts, ['Generate your weekly plan first.'])
+})
+
+test('Best Match never claims full readiness for rounded 100 percent or empty recipes', async () => {
+  const nearly = bestRecipe(1, 'Nearly ready', [...Array(200).fill('Eggs'), 'Rice'])
+  const app = await bestApp({ library: [nearly], pantryNames: ['Eggs'] })
+  assert.equal(pantry.getPantryRecipeMatch(nearly, ['Eggs']).matchPercentage, 100)
+  assert.equal(nodeText(bestCard(app)).includes('You can make this!'), false)
+  assert.ok(nodeText(bestCard(app)).includes('99% Ready'))
+  assert.ok(nodeText(bestCard(app)).includes('Rice'))
+  assert.equal(bestButton(app, 'Cook Tonight'), undefined)
+  const empty = await bestApp({ library: [bestRecipe(2, 'Empty', [])], pantryNames: ['Eggs'] })
+  assert.ok(nodeText(bestCard(empty)).includes('No suitable recommendation right now'))
+})
+
+test('Best Match Add Missing gives local Added/Already feedback, deduplicates, and preserves Pantry ownership', async () => {
+  const grilled = bestRecipe(1, 'Grilled Cheese', ['Cheese', 'Butter', 'Bread'])
+  const app = await bestApp({ library: [grilled], pantryNames: ['Cheese', 'Butter'] })
+  const add = () => { bestButton(app, 'Add Missing').props.onClick(); app.flush() }
+  add()
+  assert.ok(nodeText(bestCard(app)).includes('✓ Added to Shopping List'))
+  assert.deepEqual(app.state.pantryItems, ['Cheese', 'Butter'])
+  assert.ok(nodeText(bestCard(app)).includes('67% Ready'))
+  assert.ok(nodeText(bestCard(app)).includes('• Bread'))
+  assert.equal(app.state.viewingRecipe, null)
+  add()
+  assert.ok(nodeText(bestCard(app)).includes('✓ Already on Shopping List'))
+  assert.deepEqual(Object.values(app.state.shoppingList).flat().map(item => item.label), ['Bread'])
+  assert.deepEqual(JSON.parse(app.storage.getItem(account.plannerCacheKey('A'))).shoppingList.Other.map(item => item.label), ['Bread'])
+  clickButton(app, '🛒 Shop')
+  assert.deepEqual(app.nodes().filter(node => node.props?.className === 'shopping-item').map(nodeText), ['Bread'])
+  clickButton(app, '🥫 Pantry')
+  assert.equal(app.nodes().some(node => node.props?.role === 'status'), false, 'Best Match feedback does not affect Pantry cards')
+  await app.ready('B', [grilled], {}, ['Cheese', 'Butter'])
+  assert.equal(nodeText(bestCard(app)).includes('✓ Already on Shopping List'), false)
 })
