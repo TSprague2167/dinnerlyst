@@ -1270,3 +1270,50 @@ test('a locked empty day is preserved and explained rather than claiming new mea
   assert.ok(shortageText(app).includes('6 of 7 days are currently filled. Some locked days have no meal.'))
   assertPlannerCacheMatches(app)
 })
+
+test('successful Cook Tonight clears a partial Generate warning while preserving shopping and cache behavior', async () => {
+  const rice = eligibleMeal(1)
+  const eggs = bestRecipe(2, 'Egg supper', ['Eggs'], ['Vegan', 'Peanut-Free'])
+  const app = await bestApp({ library: [rice], pantryNames: ['Eggs'], preferences: shortagePreferences,
+    shoppingList: { Other: [{ key: 'paper towels', label: 'paper towels', extra: true }] } })
+  app.state.generateWeeklyMeals(); app.flush()
+  assert.equal(app.state.weeklyMeals.filter(item => item.meal).length, 1)
+  assert.ok(shortageText(app).includes('1 of 7 days are currently filled.'))
+  const reload = app.state.getRecipes(); await app.pump()
+  app.requests.filter(req => req.table === 'recipes' && req.method === 'select').at(-1).resolve({ data: [rice, eggs], error: null })
+  await reload; await app.pump()
+  const otherDays = structuredClone(app.state.weeklyMeals.filter(item => item.day !== 'Thursday'))
+  bestButton(app, 'Cook Tonight').props.onClick(); app.flush()
+  assert.equal(app.state.weeklyMeals.find(item => item.day === 'Thursday').meal.id, 2)
+  assert.equal(app.state.weeklyMeals.filter(item => item.meal).length, 2)
+  assert.deepEqual(app.state.weeklyMeals.filter(item => item.day !== 'Thursday'), otherDays)
+  assert.equal(shortageText(app), '')
+  const visible = Object.values(app.state.shoppingList).flat().filter(item => !item.pantryHidden).map(item => item.label)
+  assert.ok(visible.includes('paper towels'))
+  assert.ok(visible.some(label => label.toLowerCase().includes('ingredient 1')))
+  assert.equal(visible.some(label => label.toLowerCase().includes('eggs')), false)
+  assert.deepEqual(app.state.lockedDays, [])
+  assertPlannerCacheMatches(app)
+})
+
+test('every refused Cook Tonight guard preserves the plan, shopping, locks, cache and existing feedback', async () => {
+  for (const reason of ['locked', 'already tonight', 'other day', 'incompatible', 'missing day', 'unavailable recipe', 'no recipe']) {
+    const todayMeal = eligibleMeal(1), candidate = eligibleMeal(2)
+    const incompatible = bestRecipe(3, 'Incompatible meal', ['Eggs'])
+    const meals = reason === 'missing day' ? [{ day: 'Monday', meal: todayMeal }]
+      : [{ day: 'Thursday', meal: todayMeal }, ...(reason === 'other day' ? [{ day: 'Monday', meal: candidate }] : [])]
+    const app = await bestApp({ library: [todayMeal, candidate, incompatible], preferences: shortagePreferences,
+      meals, locks: ['Sunday', ...(reason === 'locked' ? ['Thursday'] : [])] })
+    app.state.regenerateMeal('Sunday'); app.flush()
+    const feedback = shortageText(app)
+    assert.ok(feedback.includes('Sunday is locked.'))
+    const before = structuredClone({ meals: app.state.weeklyMeals, shopping: app.state.shoppingList, locks: app.state.lockedDays })
+    const requested = reason === 'already tonight' ? todayMeal : reason === 'incompatible' ? incompatible
+      : reason === 'unavailable recipe' ? { ...candidate, id: 999 } : reason === 'no recipe' ? null : candidate
+    app.state.cookTonight(requested); app.flush()
+    assert.deepEqual({ meals: app.state.weeklyMeals, shopping: app.state.shoppingList, locks: app.state.lockedDays }, before, reason)
+    assert.equal(shortageText(app), feedback, reason)
+    if (reason !== 'no recipe') assert.ok(app.alerts.length > 0, reason)
+    assertPlannerCacheMatches(app)
+  }
+})

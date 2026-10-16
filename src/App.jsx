@@ -750,6 +750,7 @@ function cookTonight(recipe) {
       : item
   )
 
+  setPlanFeedback(null)
   setWeeklyMeals(updatedMeals)
   createShoppingList(updatedMeals)
 }
