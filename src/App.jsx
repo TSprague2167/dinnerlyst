@@ -44,6 +44,9 @@ function App() {
   const [authLoadError, setAuthLoadError] = useState(null)
   const [preferenceLoad, setPreferenceLoad] = useState(null)
   const [preferenceRetry, setPreferenceRetry] = useState(0)
+  const [preferenceSave, setPreferenceSave] = useState(null)
+  const [savedPreferenceSnapshot, setSavedPreferenceSnapshot] = useState(null)
+  const preferenceSaveOperation = useRef(null)
   const [authEmail, setAuthEmail] = useState("")
   const [authPassword, setAuthPassword] = useState("")
   const [recipes, setRecipes] = useState([])
@@ -121,6 +124,9 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
         setOnboardingStep(1)
         setPreferenceLoad(null)
         setPreferenceRetry(0)
+        preferenceSaveOperation.current = null
+        setPreferenceSave(null)
+        setSavedPreferenceSnapshot(null)
         setSearchTerm("")
         setPantrySearch("")
         setSelectedCategory("All")
@@ -260,13 +266,15 @@ useEffect(() => {
         if (!active || !ownsAccount(owner)) return
         if (error) throw error
         if (data) {
-          setOnboardingAnswers({
+          const answers = {
             householdSize: data.household_size,
             dietPreferences: data.diet_preferences || [],
             allergies: data.allergies,
             dislikedFoods: data.disliked_foods || "",
             cookingStyle: data.cooking_style || ""
-          })
+          }
+          setOnboardingAnswers(answers)
+          setSavedPreferenceSnapshot(answers)
         }
         setOnboardingStep(data ? 0 : 1)
         setPreferenceLoad({ userId, status: "ready" })
@@ -809,29 +817,52 @@ const pantryMatches = recipes
     )
   }
   const savePreferences = async (owner = plannerOwner) => {
-    if (!owner?.userId || !ownsAccount(owner)) return false
-    const { error } = await supabase
-      .from("user_preferences")
-      .upsert({
-        user_id: owner.userId,
-        household_size: onboardingAnswers.householdSize,
-        diet_preferences: onboardingAnswers.dietPreferences,
-        allergies: onboardingAnswers.allergies,
-        disliked_foods: onboardingAnswers.dislikedFoods,
-        cooking_style: onboardingAnswers.cookingStyle
-      }, { onConflict: "user_id" })
-
-    if (!ownsAccount(owner)) return false
-    if (error) {
+    if (!owner?.userId || !ownsAccount(owner) || preferenceSaveOperation.current) return false
+    const operation = {}
+    const snapshot = onboardingAnswers
+    preferenceSaveOperation.current = operation
+    setPreferenceSave({ status: "saving", snapshot })
+    try {
+      const { error } = await supabase
+        .from("user_preferences")
+        .upsert({
+          user_id: owner.userId,
+          household_size: snapshot.householdSize,
+          diet_preferences: snapshot.dietPreferences,
+          allergies: snapshot.allergies,
+          disliked_foods: snapshot.dislikedFoods,
+          cooking_style: snapshot.cookingStyle
+        }, { onConflict: "user_id" })
+      if (!ownsAccount(owner) || preferenceSaveOperation.current !== operation) return false
+      if (error) throw error
+      setSavedPreferenceSnapshot(snapshot)
+      setPreferenceSave({ status: "success", snapshot })
+      return true
+    } catch (error) {
+      if (!ownsAccount(owner) || preferenceSaveOperation.current !== operation) return false
       console.error("Error saving preferences:", error)
+      setPreferenceSave({ status: "error", message: "Could not save your preferences. Your changes are still here. Please try again." })
       return false
+    } finally {
+      if (preferenceSaveOperation.current === operation) preferenceSaveOperation.current = null
     }
-    return true
   }
 
   const updatePreferences = async () => {
-    const saved = await savePreferences()
-    if (saved) console.log("Preferences updated!")
+    await savePreferences()
+  }
+  const preferencesSaving = preferenceSave?.status === "saving"
+  function renderPreferenceSaveStatus() {
+    const hasUnsavedChanges = savedPreferenceSnapshot !== null &&
+      JSON.stringify(savedPreferenceSnapshot) !== JSON.stringify(onboardingAnswers)
+    if (preferenceSave?.status === "saving") return <p role="status">Saving your preferences…</p>
+    if (preferenceSave?.status === "error") return <>
+      <p role="alert">{preferenceSave.message}</p>
+      {hasUnsavedChanges && <p role="status">You have unsaved changes.</p>}
+    </>
+    if (hasUnsavedChanges) return <p role="status">You have unsaved changes.</p>
+    if (preferenceSave?.status === "success") return <p role="status">✓ Preferences saved</p>
+    return null
   }
  function renderRestrictionFields() {
     const values = getAllergyValues(onboardingAnswers.allergies)
@@ -1164,6 +1195,7 @@ if (onboardingStep === 5) {
         </p>
         <button
   className="onboarding-continue"
+  disabled={preferencesSaving}
  onClick={async () => {
 const owner = plannerOwner
 const saved = await savePreferences(owner)
@@ -1173,8 +1205,9 @@ if (!saved || !ownsAccount(owner)) return
     setOnboardingStep(0)
   }}
 >
-  Start Planning →
+  {preferencesSaving ? "Saving..." : "Start Planning →"}
 </button>
+{renderPreferenceSaveStatus()}
       </div>
     </div>
   )
@@ -2428,10 +2461,11 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
 <button
   className="onboarding-continue"
   onClick={updatePreferences}
-
+  disabled={preferencesSaving}
 >
-  Save Preferences
+  {preferencesSaving ? "Saving..." : "Save Preferences"}
 </button>
+{renderPreferenceSaveStatus()}
   </section>
 )}
       </main>
