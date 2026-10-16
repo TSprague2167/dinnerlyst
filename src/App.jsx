@@ -52,6 +52,8 @@ function App() {
   const [instructions, setInstructions] = useState("")
   const [dietTags, setDietTags] = useState([])
   const [viewingRecipe, setViewingRecipe] = useState(null)
+  const [expandedRecipeId, setExpandedRecipeId] = useState(null)
+  const [pantryAddFeedback, setPantryAddFeedback] = useState({})
   const [swapOptions, setSwapOptions] = useState(null)
   const [touchStartX, setTouchStartX] = useState(null)
   const [touchEndX, setTouchEndX] = useState(null)
@@ -106,6 +108,8 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
         setImageUrl("")
         setImageFile(null)
         setViewingRecipe(null)
+        setExpandedRecipeId(null)
+        setPantryAddFeedback({})
         setSwapOptions(null)
         setPantryItems([])
         setPantryLoadedSession(null)
@@ -1637,7 +1641,7 @@ if (!saved || !ownsAccount(owner)) return
   ))}
 </div>
             <ul className="recipe-ingredients">
-  {(viewingRecipe?.id === recipe.id
+  {(expandedRecipeId === recipe.id
     ? recipe.ingredients
     : recipe.ingredients.slice(0, 3)
   ).map((ingredient, index) => (
@@ -1645,12 +1649,12 @@ if (!saved || !ownsAccount(owner)) return
   ))}
 </ul>
 
-{viewingRecipe?.id !== recipe.id && recipe.ingredients.length > 3 && (
+{expandedRecipeId !== recipe.id && recipe.ingredients.length > 3 && (
   <p className="more-ingredients">
     + {recipe.ingredients.length - 3} more ingredients
   </p>
 )}
-{viewingRecipe?.id === recipe.id && (
+{expandedRecipeId === recipe.id && (
   <div className="recipe-details">
     <div className="recipe-details-header">
       <h3>Instructions</h3>
@@ -1694,12 +1698,12 @@ if (!saved || !ownsAccount(owner)) return
   className="small-button"
   type="button"
   onClick={() =>
-    setViewingRecipe(
-      viewingRecipe?.id === recipe.id ? null : recipe
+    setExpandedRecipeId(
+      expandedRecipeId === recipe.id ? null : recipe.id
     )
   }
 >
-  {viewingRecipe?.id === recipe.id ? "Hide Recipe" : "View Recipe"}
+  {expandedRecipeId === recipe.id ? "Hide Recipe" : "View Recipe"}
 </button>
 
             <button
@@ -1865,53 +1869,6 @@ if (!saved || !ownsAccount(owner)) return
   </div>
 ))}
           </div>
-          {viewingRecipe && (
-  <div className="recipe-modal-overlay">
-    <div className="recipe-modal">
-  <button
-    className="recipe-modal-close"
-    type="button"
-    onClick={() => setViewingRecipe(null)}
-  >
-    ✕
-  </button>
-
-  {viewingRecipe.image_url && (
-    <img
-      src={viewingRecipe.image_url}
-      alt={viewingRecipe.name}
-      className="recipe-modal-image"
-    />
-  )}
-
-  <h2>{viewingRecipe.name}</h2>
-
-  <h3>Ingredients</h3>
-
-  <ul className="recipe-ingredients">
-    {viewingRecipe.ingredients.map((ingredient, index) => (
-      <li key={index}>{ingredient}</li>
-    ))}
-  </ul>
-
-  <h3>Instructions</h3>
-
-  <div className="recipe-instructions">
-    {viewingRecipe.instructions
-      ? viewingRecipe.instructions
-          .split(/\n\s*\n/)
-          .filter((step) => step.trim())
-          .map((step, index) => (
-            <div className="instruction-step" key={index}>
-              <span className="step-number">{index + 1}</span>
-              <p>{step.trim()}</p>
-            </div>
-          ))
-      : "No instructions saved."}
-  </div>
-</div>
-  </div>
-)}
 {swapOptions && (
   <div className="recipe-modal-overlay">
     <div className="recipe-modal">
@@ -2224,10 +2181,27 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
 {recipe.missingIngredients.length > 0 && (
   <button
     className="cook-button"
-    onClick={() => addMissingToShoppingList(recipe.missingIngredients)}
+    onClick={(event) => {
+      event.stopPropagation()
+      const alreadyPresent = recipe.missingIngredients.every(ingredient =>
+        (shoppingList.Other || []).some(item => asShoppingItem(item).label === ingredient)
+      )
+      addMissingToShoppingList(recipe.missingIngredients)
+      setPantryAddFeedback(previous => ({
+        ...previous,
+        [recipe.id]: {
+          ingredients: JSON.stringify(recipe.missingIngredients),
+          message: alreadyPresent ? "✓ Already on Shopping List" : "✓ Added to Shopping List"
+        }
+      }))
+    }}
   >
     🛒 Add Missing to Shopping List
   </button>
+)}
+{recipe.missingIngredients.length > 0 &&
+  pantryAddFeedback[recipe.id]?.ingredients === JSON.stringify(recipe.missingIngredients) && (
+    <p role="status">{pantryAddFeedback[recipe.id].message}</p>
 )}
     </div>
   ))}
@@ -2454,6 +2428,53 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
   </section>
 )}
       </main>
+          {viewingRecipe && (
+  <div className="recipe-modal-overlay">
+    <div className="recipe-modal">
+  <button
+    className="recipe-modal-close"
+    type="button"
+    onClick={() => setViewingRecipe(null)}
+  >
+    ✕
+  </button>
+
+  {viewingRecipe.image_url && (
+    <img
+      src={viewingRecipe.image_url}
+      alt={viewingRecipe.name}
+      className="recipe-modal-image"
+    />
+  )}
+
+  <h2>{viewingRecipe.name}</h2>
+
+  <h3>Ingredients</h3>
+
+  <ul className="recipe-ingredients">
+    {viewingRecipe.ingredients.map((ingredient, index) => (
+      <li key={index}>{ingredient}</li>
+    ))}
+  </ul>
+
+  <h3>Instructions</h3>
+
+  <div className="recipe-instructions">
+    {viewingRecipe.instructions
+      ? viewingRecipe.instructions
+          .split(/\n\s*\n/)
+          .filter((step) => step.trim())
+          .map((step, index) => (
+            <div className="instruction-step" key={index}>
+              <span className="step-number">{index + 1}</span>
+              <p>{step.trim()}</p>
+            </div>
+          ))
+      : "No instructions saved."}
+  </div>
+</div>
+  </div>
+)}
     </div>
   )
 }

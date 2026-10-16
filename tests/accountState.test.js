@@ -118,7 +118,7 @@ function appHarness(storage = memoryStorage()) {
     storage: { from: () => ({ upload: path => request({ table: 'images', method: 'upload', path }), getPublicUrl: path => ({ data: { publicUrl: path } }) }) },
   }
   let source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8').replace(/^import .*\n/gm, '').replace('export default App', '')
-  source = source.replace('  if (!authReady ||', '  observe({ session, weeklyMeals, shoppingList, lockedDays, recipes, recipeName, ingredientRows, instructions, dietTags, selectedCategories, editingRecipeId, recipeUrl, imageUrl, imageFile, viewingRecipe, swapOptions, pantryItems, checkedShoppingItems, onboardingAnswers, onboardingStep, searchTerm, pantrySearch, activeTab, selectedCategory, swipingDay, generateWeeklyMeals, regenerateMeal, getRecipes, addRecipe, importRecipeFromUrl, deleteRecipe, logout });\n  if (!authReady ||')
+  source = source.replace('  if (!authReady ||', '  observe({ session, weeklyMeals, shoppingList, lockedDays, recipes, recipeName, ingredientRows, instructions, dietTags, selectedCategories, editingRecipeId, recipeUrl, imageUrl, imageFile, viewingRecipe, expandedRecipeId, swapOptions, pantryItems, checkedShoppingItems, onboardingAnswers, onboardingStep, searchTerm, pantrySearch, activeTab, selectedCategory, swipingDay, generateWeeklyMeals, regenerateMeal, getRecipes, addRecipe, importRecipeFromUrl, deleteRecipe, logout });\n  if (!authReady ||')
   const helpers = { ...account, ...shopping, ...ingredients, ...pantry }
   const code = transformSync('App.jsx', source, { jsx: { runtime: 'classic' } }).code
   const App = new Function('React', 'useState', 'useRef', 'useEffect', 'useCallback', 'supabase', 'observe', 'window', 'alert', ...Object.keys(helpers), code + '\nreturn App')(
@@ -470,4 +470,155 @@ test('both generation paths require every restriction together with every dietar
   assert.equal(app.state.weeklyMeals[0].meal.id, 9)
   app.state.generateWeeklyMeals(); app.flush()
   assert.deepEqual(app.state.weeklyMeals.filter(item => item.meal).map(item => item.meal.id), [9])
+})
+
+
+const detailModals = app => app.nodes().filter(node => node.props?.className === 'recipe-modal')
+async function pantryDetailApp() {
+  const app = appHarness()
+  const library = [
+    { ...recipe(91, 'Egg supper'), ingredients: ['eggs', 'rice'], instructions: 'Beat eggs.\n\nCook with rice.', image_url: 'https://example.com/eggs.jpg' },
+    { ...recipe(92, 'Plain eggs'), instructions: '' }
+  ]
+  await app.ready('A', library)
+  clickButton(app, '🥫 Pantry')
+  const adding = clickButton(app, 'Eggs'); await app.pump()
+  app.requests.find(req => req.table === 'pantry_items' && req.method === 'insert').resolve({ error: null })
+  await adding; await app.pump()
+  return app
+}
+function openPantryCard(app, name = 'Egg supper') {
+  const card = app.nodes().find(node => node.props?.className === 'pantry-match-card' && nodeText(node).includes(name))
+  assert.ok(card); card.props.onClick(); app.flush()
+}
+function closeDetails(app) {
+  app.nodes(detailModals(app)[0]).find(node => node.props?.className === 'recipe-modal-close').props.onClick()
+  app.flush()
+}
+
+test('Pantry opens exactly one shared modal with exact recipe contents; closing stays closed across tabs', async () => {
+  const app = await pantryDetailApp()
+  openPantryCard(app)
+  assert.equal(app.state.viewingRecipe.id, 91)
+  assert.equal(detailModals(app).length, 1)
+  const modal = detailModals(app)[0], nodes = app.nodes(modal)
+  assert.equal(nodes.find(node => node.type === 'h2').props.children[0], 'Egg supper')
+  assert.deepEqual(nodes.filter(node => node.type === 'li').map(nodeText), ['eggs', 'rice'])
+  assert.deepEqual(nodes.filter(node => node.props?.className === 'instruction-step').map(nodeText), ['Beat eggs.', 'Cook with rice.'])
+  assert.deepEqual(nodes.filter(node => node.props?.className === 'step-number').map(node => node.props.children[0]), [1, 2])
+  assert.equal(nodes.find(node => node.type === 'img').props.src, 'https://example.com/eggs.jpg')
+  closeDetails(app)
+  assert.equal(app.state.viewingRecipe, null)
+  for (const tab of ['🍽 Plan', '📖 Recipes', '🥫 Pantry']) {
+    clickButton(app, tab); assert.equal(detailModals(app).length, 0)
+  }
+  openPantryCard(app, 'Plain eggs')
+  assert.equal(detailModals(app).length, 1)
+  assert.ok(nodeText(detailModals(app)[0]).includes('No instructions saved.'))
+})
+
+test('Plan titles open shared details while Recipes View/Hide stays inline without latent modals', async () => {
+  const storage = memoryStorage(), owner = { userId: 'A', generation: 1 }
+  const planned = { ...recipe(91, 'Plan supper'), ingredients: ['eggs', 'rice', 'milk', 'salt'], instructions: 'Cook supper.' }
+  account.persistPlannerCache(storage, owner, owner, { weeklyMeals: [{ day: 'Monday', meal: planned }], shoppingList: {}, lockedDays: [] })
+  const app = appHarness(storage); await app.ready('A', [planned])
+  clickButton(app, 'Plan supper')
+  assert.equal(app.state.viewingRecipe.id, 91)
+  assert.equal(detailModals(app).length, 1)
+  assert.ok(nodeText(detailModals(app)[0]).includes('Cook supper.'))
+  closeDetails(app)
+  clickButton(app, '📖 Recipes'); clickButton(app, 'View Recipe')
+  assert.equal(app.state.expandedRecipeId, 91)
+  assert.equal(app.state.viewingRecipe, null)
+  assert.equal(detailModals(app).length, 0)
+  const inline = app.nodes().find(node => node.props?.className === 'recipe-details')
+  assert.ok(nodeText(inline).includes('Cook supper.'))
+  assert.deepEqual(app.nodes(app.nodes().find(node => node.props?.className === 'recipe-card')).filter(node => node.type === 'li').map(nodeText), planned.ingredients)
+  clickButton(app, '🍽 Plan'); assert.equal(detailModals(app).length, 0)
+  clickButton(app, '📖 Recipes'); clickButton(app, 'Hide Recipe')
+  assert.equal(app.state.expandedRecipeId, null)
+  assert.equal(app.nodes().some(node => node.props?.className === 'recipe-details'), false)
+})
+
+test('Pantry Add Missing stops card propagation and preserves shopping-list addition', async () => {
+  const app = await pantryDetailApp()
+  const card = app.nodes().find(node => node.props?.className === 'pantry-match-card' && nodeText(node).includes('Egg supper'))
+  const add = app.nodes(card).find(node => node.type === 'button')
+  let stopped = false
+  add.props.onClick({ stopPropagation() { stopped = true } })
+  // Model the parent click only if the child did not stop propagation.
+  if (!stopped) card.props.onClick()
+  app.flush()
+  assert.equal(stopped, true)
+  assert.equal(app.state.viewingRecipe, null)
+  assert.equal(detailModals(app).length, 0)
+  assert.deepEqual(Object.values(app.state.shoppingList).flat().map(item => item.label), ['rice'])
+})
+
+test('account switch and logout clear both modal selection and inline expansion', async () => {
+  for (const transition of ['switch', 'logout']) {
+    const app = await pantryDetailApp()
+    clickButton(app, '📖 Recipes'); clickButton(app, 'View Recipe')
+    assert.ok(app.state.expandedRecipeId)
+    clickButton(app, '🥫 Pantry'); openPantryCard(app)
+    assert.ok(app.state.viewingRecipe)
+    if (transition === 'switch') await app.ready('B')
+    else {
+      const signingOut = app.state.logout(); await app.pump()
+      app.emit(null); await app.pump()
+      app.requests.find(req => req.method === 'logout').resolve({ error: null })
+      await signingOut; await app.pump()
+    }
+    assert.equal(app.state.viewingRecipe, null)
+    assert.equal(app.state.expandedRecipeId, null)
+    assert.equal(detailModals(app).length, 0)
+    await app.ready('C')
+    assert.equal(app.state.viewingRecipe, null)
+    assert.equal(app.state.expandedRecipeId, null)
+    assert.equal(detailModals(app).length, 0)
+  }
+})
+
+
+test('Pantry Add Missing feedback is per-card; repeats preserve Bread and pantry ownership', async () => {
+  const storage = memoryStorage(), app = appHarness(storage)
+  const grilled = { ...recipe(101, 'Grilled Cheese'), ingredients: ['Cheese', 'Butter', 'Bread'] }
+  await app.ready('A', [grilled, { ...grilled, id: 102, name: 'Other Sandwich' }])
+  clickButton(app, '🥫 Pantry')
+  for (const ingredient of ['Cheese', 'Butter']) {
+    const adding = clickButton(app, ingredient); await app.pump()
+    app.requests.filter(req => req.table === 'pantry_items' && req.method === 'insert').at(-1).resolve({ error: null })
+    await adding; await app.pump()
+  }
+  const cards = () => app.nodes().filter(node => node.props?.className === 'pantry-match-card')
+  const target = () => cards().find(node => nodeText(node).includes('Grilled Cheese'))
+  const status = card => app.nodes(card).filter(node => node.props?.role === 'status').map(nodeText)
+  function addMissing() {
+    let stopped = false
+    const card = target()
+    app.nodes(card).find(node => node.type === 'button').props.onClick({ stopPropagation() { stopped = true } })
+    if (!stopped) card.props.onClick()
+    assert.equal(stopped, true); app.flush()
+  }
+  addMissing()
+  assert.deepEqual(status(target()), ['✓ Added to Shopping List'])
+  assert.deepEqual(status(cards().find(node => nodeText(node).includes('Other Sandwich'))), [])
+  assert.equal(app.state.viewingRecipe, null)
+  assert.equal(detailModals(app).length, 0)
+  assert.deepEqual(app.state.pantryItems, ['Cheese', 'Butter'])
+  const counts = app.nodes(target()).find(node => node.type === 'p').props.children
+  assert.ok(counts.includes(2)); assert.ok(counts.includes(3))
+  assert.deepEqual(app.nodes(target()).filter(node => node.type === 'li').map(nodeText), ['Bread'])
+  clickButton(app, '🛒 Shop')
+  assert.deepEqual(app.nodes().filter(node => node.props?.className === 'shopping-item').map(nodeText), ['Bread'])
+  clickButton(app, '🥫 Pantry'); addMissing()
+  assert.deepEqual(status(target()), ['✓ Already on Shopping List'])
+  assert.equal(app.state.viewingRecipe, null)
+  assert.deepEqual(Object.values(app.state.shoppingList).flat().map(item => item.label), ['Bread'])
+  assert.deepEqual(JSON.parse(storage.getItem(account.plannerCacheKey('A'))).shoppingList.Other.map(item => item.label), ['Bread'])
+  const reloaded = appHarness(storage); await reloaded.ready('A', [grilled])
+  clickButton(reloaded, '🛒 Shop')
+  assert.deepEqual(reloaded.nodes().filter(node => node.props?.className === 'shopping-item').map(nodeText), ['Bread'])
+  await app.ready('B', [grilled]); clickButton(app, '🥫 Pantry')
+  assert.equal(app.nodes().some(node => node.props?.role === 'status'), false)
 })
