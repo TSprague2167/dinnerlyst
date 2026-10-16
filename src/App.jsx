@@ -8,12 +8,17 @@ import { emptyIngredientRow, getIngredientRows, formatIngredient, rowsFromIngred
 
 
 const allergySafeTags = [
-  "Peanut-Free", "Tree Nut-Free", "Shellfish-Free", "Egg-Free",
-  "Soy-Free", "Dairy-Free", "Gluten-Free",
+  "Gluten-Free", "Dairy-Free", "Peanut-Free", "Tree Nut-Free",
+  "Shellfish-Free", "Egg-Free", "Soy-Free",
 ]
 
+function getAllergyValues(allergies) {
+  // Keep legacy strings intact: never split, trim, or discard saved values.
+  return Array.isArray(allergies) ? allergies : allergies == null ? [] : [allergies]
+}
+
 function getRequiredAllergyTags(allergies = []) {
-  return allergies.filter((tag) => allergySafeTags.includes(tag))
+  return getAllergyValues(allergies).filter((tag) => allergySafeTags.includes(tag))
 }
 
 function plannerStorage() {
@@ -252,7 +257,7 @@ useEffect(() => {
           setOnboardingAnswers({
             householdSize: data.household_size,
             dietPreferences: data.diet_preferences || [],
-            allergies: data.allergies || [],
+            allergies: data.allergies,
             dislikedFoods: data.disliked_foods || "",
             cookingStyle: data.cooking_style || ""
           })
@@ -807,7 +812,7 @@ const pantryMatches = recipes
         user_id: owner.userId,
         household_size: onboardingAnswers.householdSize,
         diet_preferences: onboardingAnswers.dietPreferences,
-        allergies: onboardingAnswers.allergies.filter(Boolean),
+        allergies: onboardingAnswers.allergies,
         disliked_foods: onboardingAnswers.dislikedFoods,
         cooking_style: onboardingAnswers.cookingStyle
       }, { onConflict: "user_id" })
@@ -823,6 +828,44 @@ const pantryMatches = recipes
   const updatePreferences = async () => {
     const saved = await savePreferences()
     if (saved) console.log("Preferences updated!")
+  }
+ function renderRestrictionFields() {
+    const values = getAllergyValues(onboardingAnswers.allergies)
+    const unsupported = values.map((value, index) => ({ value, index }))
+      .filter(({ value }) => !allergySafeTags.includes(value))
+    return (
+      <div className="onboarding-field">
+        <h3>Food allergies &amp; restrictions</h3>
+        <p>Select any that Dinnerlyst should avoid when planning your meals.</p>
+        <div className="diet-options" role="group" aria-label="Food allergies & restrictions">
+          {allergySafeTags.map(tag => (
+            <button key={tag} type="button"
+              className={values.includes(tag) ? "diet-option selected" : "diet-option"}
+              aria-pressed={values.includes(tag)}
+              onClick={() => setOnboardingAnswers(previous => {
+                const saved = getAllergyValues(previous.allergies)
+                return { ...previous, allergies: saved.includes(tag)
+                  ? saved.filter(value => value !== tag) : [...saved, tag] }
+              })}>
+              {tag}
+            </button>
+          ))}
+        </div>
+        {unsupported.map(({ value, index }) => (
+          <div key={index}>
+            <p>Not currently supported: {value === "" ? "(empty saved value)" : String(value)}</p>
+            <p>Dinnerlyst can't reliably filter this restriction yet.</p>
+            <button type="button" aria-label={`Remove unsupported restriction: ${String(value)}`}
+              onClick={() => setOnboardingAnswers(previous => ({
+                ...previous,
+                allergies: getAllergyValues(previous.allergies).filter((_, at) => at !== index)
+              }))}>
+              Remove
+            </button>
+          </div>
+        ))}
+      </div>
+    )
   }
  if (onboardingStep === 1) {
   return (
@@ -1010,66 +1053,12 @@ if (onboardingStep === 3) {
       <div className="onboarding-card">
         <h2>Anything we should avoid?</h2>
         <p>
-          Tell us about allergies, restrictions, or foods your household doesn't like.
+          Choose your food restrictions and save any food dislikes below.
         </p>
-        <div className="onboarding-field">
-  <label>Allergies or restrictions</label>
-  <button
-  type="button"
-  className={onboardingAnswers.allergies.includes("Gluten-Free") ? "diet-option selected" : "diet-option"}
-  onClick={() =>
-    setOnboardingAnswers({
-      ...onboardingAnswers,
-      allergies: onboardingAnswers.allergies.includes("Gluten-Free")
-        ? onboardingAnswers.allergies.filter((item) => item !== "Gluten-Free")
-        : [...onboardingAnswers.allergies, "Gluten-Free"]
-    })
-  }
->
-  🌾 Gluten-Free
-</button>
-<button
-  type="button"
-  className={onboardingAnswers.allergies.includes("Dairy-Free") ? "diet-option selected" : "diet-option"}
-  onClick={() =>
-    setOnboardingAnswers({
-      ...onboardingAnswers,
-      allergies: onboardingAnswers.allergies.includes("Dairy-Free")
-        ? onboardingAnswers.allergies.filter((item) => item !== "Dairy-Free")
-        : [...onboardingAnswers.allergies, "Dairy-Free"]
-    })
-  }
->
-  🥛 Dairy-Free
-</button>
-<button
-  type="button"
-  className={onboardingAnswers.allergies.includes("Peanut-Free") ? "diet-option selected" : "diet-option"}
-  onClick={() =>
-    setOnboardingAnswers({
-      ...onboardingAnswers,
-      allergies: onboardingAnswers.allergies.includes("Peanut-Free")
-        ? onboardingAnswers.allergies.filter((item) => item !== "Peanut-Free")
-        : [...onboardingAnswers.allergies, "Peanut-Free"]
-    })
-  }
->
-  🥜 Peanut-Free
-</button>
-  <input
-    type="text"
-    placeholder="e.g. peanuts, shellfish, dairy"
-    value={onboardingAnswers.allergies.join(", ")}
-    onChange={(e) =>
-      setOnboardingAnswers({
-        ...onboardingAnswers,
-        allergies: e.target.value.split(",").map((item) => item.trim())
-      })
-    }
-  />
-</div>
+        {renderRestrictionFields()}
 <div className="onboarding-field">
   <label>Foods we don't like</label>
+  <p>Saved for your reference. Dinnerlyst does not currently use these foods to filter meal suggestions.</p>
   <input
     type="text"
     placeholder="e.g. mushrooms, olives, seafood"
@@ -2391,93 +2380,10 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
   No Preference
 </button>
 </div>
-<div className="onboarding-field">
-  <label>Allergies or restrictions</label>
-  <button
-  type="button"
-  className={onboardingAnswers.allergies.includes("Peanut-Free") ? "diet-option selected" : "diet-option"}
-  onClick={() =>
-    setOnboardingAnswers({
-      ...onboardingAnswers,
-      allergies: onboardingAnswers.allergies.includes("Peanut-Free")
-        ? onboardingAnswers.allergies.filter((item) => item !== "Peanut-Free")
-        : [...onboardingAnswers.allergies, "Peanut-Free"]
-    })
-  }
->
-  🥜 Peanut-Free
-</button>
-<button
-  type="button"
-  className={onboardingAnswers.allergies.includes("Tree Nut-Free") ? "diet-option selected" : "diet-option"}
-  onClick={() =>
-    setOnboardingAnswers({
-      ...onboardingAnswers,
-      allergies: onboardingAnswers.allergies.includes("Tree Nut-Free")
-        ? onboardingAnswers.allergies.filter((item) => item !== "Tree Nut-Free")
-        : [...onboardingAnswers.allergies, "Tree Nut-Free"]
-    })
-  }
->
-  🌰 Tree Nut-Free
-</button>
-<button
-  type="button"
-  className={onboardingAnswers.allergies.includes("Shellfish-Free") ? "diet-option selected" : "diet-option"}
-  onClick={() =>
-    setOnboardingAnswers({
-      ...onboardingAnswers,
-      allergies: onboardingAnswers.allergies.includes("Shellfish-Free")
-        ? onboardingAnswers.allergies.filter((item) => item !== "Shellfish-Free")
-        : [...onboardingAnswers.allergies, "Shellfish-Free"]
-    })
-  }
->
-  🦐 Shellfish-Free
-</button>
-<button
-  type="button"
-  className={onboardingAnswers.allergies.includes("Egg-Free") ? "diet-option selected" : "diet-option"}
-  onClick={() =>
-    setOnboardingAnswers({
-      ...onboardingAnswers,
-      allergies: onboardingAnswers.allergies.includes("Egg-Free")
-        ? onboardingAnswers.allergies.filter((item) => item !== "Egg-Free")
-        : [...onboardingAnswers.allergies, "Egg-Free"]
-    })
-  }
->
-  🥚 Egg-Free
-</button>
-
-<button
-  type="button"
-  className={onboardingAnswers.allergies.includes("Soy-Free") ? "diet-option selected" : "diet-option"}
-  onClick={() =>
-    setOnboardingAnswers({
-      ...onboardingAnswers,
-      allergies: onboardingAnswers.allergies.includes("Soy-Free")
-        ? onboardingAnswers.allergies.filter((item) => item !== "Soy-Free")
-        : [...onboardingAnswers.allergies, "Soy-Free"]
-    })
-  }
->
-  🌱 Soy-Free
-</button>
-  <input
-    type="text"
-    placeholder="e.g. peanuts, shellfish, dairy"
-    value={onboardingAnswers.allergies.join(", ")}
-    onChange={(e) => {
-  setOnboardingAnswers({
-    ...onboardingAnswers,
-   allergies: e.target.value.split(",").map((item) => item.trim()).filter(Boolean)
-  })
-}}
-  />
-</div>
+{renderRestrictionFields()}
 <div className="onboarding-field">
   <label>Foods we don't like</label>
+  <p>Saved for your reference. Dinnerlyst does not currently use these foods to filter meal suggestions.</p>
   <input
     type="text"
     placeholder="e.g. mushrooms, olives, seafood"

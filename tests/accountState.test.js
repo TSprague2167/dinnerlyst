@@ -118,7 +118,7 @@ function appHarness(storage = memoryStorage()) {
     storage: { from: () => ({ upload: path => request({ table: 'images', method: 'upload', path }), getPublicUrl: path => ({ data: { publicUrl: path } }) }) },
   }
   let source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8').replace(/^import .*\n/gm, '').replace('export default App', '')
-  source = source.replace('  if (!authReady ||', '  observe({ session, weeklyMeals, shoppingList, lockedDays, recipes, recipeName, ingredientRows, instructions, dietTags, selectedCategories, editingRecipeId, recipeUrl, imageUrl, imageFile, viewingRecipe, swapOptions, pantryItems, checkedShoppingItems, onboardingAnswers, onboardingStep, searchTerm, pantrySearch, activeTab, selectedCategory, swipingDay, getRecipes, addRecipe, importRecipeFromUrl, deleteRecipe, logout });\n  if (!authReady ||')
+  source = source.replace('  if (!authReady ||', '  observe({ session, weeklyMeals, shoppingList, lockedDays, recipes, recipeName, ingredientRows, instructions, dietTags, selectedCategories, editingRecipeId, recipeUrl, imageUrl, imageFile, viewingRecipe, swapOptions, pantryItems, checkedShoppingItems, onboardingAnswers, onboardingStep, searchTerm, pantrySearch, activeTab, selectedCategory, swipingDay, generateWeeklyMeals, regenerateMeal, getRecipes, addRecipe, importRecipeFromUrl, deleteRecipe, logout });\n  if (!authReady ||')
   const helpers = { ...account, ...shopping, ...ingredients, ...pantry }
   const code = transformSync('App.jsx', source, { jsx: { runtime: 'classic' } }).code
   const App = new Function('React', 'useState', 'useRef', 'useEffect', 'useCallback', 'supabase', 'observe', 'window', 'alert', ...Object.keys(helpers), code + '\nreturn App')(
@@ -138,13 +138,13 @@ function appHarness(storage = memoryStorage()) {
     else if (value && typeof value === 'object') { result.push(value); nodes(value.props?.children, result) }
     return result
   }
-  async function ready(id, library = [recipe(id === 'A' ? 87 : 88), recipe(57)]) {
+  async function ready(id, library = [recipe(id === 'A' ? 87 : 88), recipe(57)], preferences = { household_size: 2 }) {
     const start = requests.length
     emit(id); await pump()
     const ownerRequests = requests.slice(start).filter(item => !item.settled && ['recipes', 'pantry_items', 'user_preferences', 'checked_shopping_items'].includes(item.table))
     for (const req of ownerRequests) {
       req.settled = true
-      req.resolve({ data: req.table === 'recipes' ? library : req.table === 'user_preferences' ? { household_size: 2 } : [], error: null })
+      req.resolve({ data: req.table === 'recipes' ? library : req.table === 'user_preferences' ? (preferences == null ? null : { household_size: 2, ...preferences }) : [], error: null })
     }
     await pump()
   }
@@ -348,4 +348,126 @@ test('editing state and personal recipe mutation ownership are isolated across a
   write.resolve({ data: [recipe(87)], error: null }); await saving; await app.pump()
   assert.equal(app.reloads, 0)
   assert.equal(app.state.recipes.some(item => item.id === 87), false)
+})
+
+
+const supportedRestrictions = ['Gluten-Free', 'Dairy-Free', 'Peanut-Free', 'Tree Nut-Free', 'Shellfish-Free', 'Egg-Free', 'Soy-Free']
+const nodeText = node => typeof node === 'string' ? node : Array.isArray(node) ? node.map(nodeText).join('') : nodeText(node?.props?.children || '')
+const buttonNamed = (app, label) => app.nodes().find(node => node.type === 'button' && nodeText(node) === label)
+function clickButton(app, label) {
+  const button = buttonNamed(app, label)
+  assert.ok(button, `button exists: ${label}`)
+  const result = button.props.onClick(); app.flush(); return result
+}
+function restrictionButtons(app) {
+  const group = app.nodes().find(node => node.props?.['aria-label'] === 'Food allergies & restrictions')
+  assert.ok(group)
+  return app.nodes(group).filter(node => node.type === 'button')
+}
+async function saveAndReadPreferences(app) {
+  const saving = clickButton(app, 'Save Preferences')
+  await app.pump()
+  const request = app.requests.filter(req => req.table === 'user_preferences' && req.method === 'upsert').at(-1)
+  request.resolve({ error: null }); await saving; await app.pump()
+  return request.payload
+}
+
+test('onboarding and Preferences share seven supported choices without allergy text input', async () => {
+  const app = appHarness(); await app.ready('A', [], null)
+  clickButton(app, 'Continue →'); clickButton(app, 'Continue →')
+  assert.equal(app.state.onboardingStep, 3)
+  assert.deepEqual(restrictionButtons(app).map(nodeText), supportedRestrictions)
+  assert.equal(app.nodes().some(node => node.props?.placeholder === 'e.g. peanuts, shellfish, dairy'), false)
+  // The only free text in this step is the explicitly informational food-dislikes field.
+  assert.deepEqual(app.nodes().filter(node => node.type === 'input').map(node => node.props.value), [''])
+  assert.ok(nodeText(app.nodes()).includes('does not currently use these foods to filter meal suggestions.'))
+  clickButton(app, 'Dairy-Free')
+  assert.deepEqual(app.state.onboardingAnswers.allergies, ['Dairy-Free'])
+  await app.ready('B')
+  clickButton(app, '⚙️ Settings / Preferences')
+  assert.deepEqual(restrictionButtons(app).map(nodeText), supportedRestrictions)
+  assert.equal(app.nodes().some(node => node.props?.placeholder === 'e.g. peanuts, shellfish, dairy'), false)
+})
+
+test('unsupported restrictions survive edits, save and reload; removal is individual and explicit', async () => {
+  const original = ['Sesame', 'sesame', 'Peanut-Free', '', 'Sesame']
+  const app = appHarness(); await app.ready('A', [], { allergies: original, disliked_foods: 'olives' })
+  clickButton(app, '⚙️ Settings / Preferences')
+  assert.ok(nodeText(app.nodes()).includes('Not currently supported: Sesame'))
+  assert.ok(nodeText(app.nodes()).includes("Dinnerlyst can't reliably filter this restriction yet."))
+  clickButton(app, 'High Protein')
+  const unchanged = await saveAndReadPreferences(app)
+  assert.deepEqual(unchanged.allergies, original)
+  assert.equal(unchanged.disliked_foods, 'olives')
+  clickButton(app, 'Soy-Free')
+  const saved = await saveAndReadPreferences(app)
+  assert.deepEqual(saved.allergies, [...original, 'Soy-Free'])
+  const reload = appHarness(); await reload.ready('A', [], saved)
+  clickButton(reload, '⚙️ Settings / Preferences')
+  assert.deepEqual(reload.state.onboardingAnswers.allergies, saved.allergies)
+  reload.nodes().find(node => node.props?.['aria-label'] === 'Remove unsupported restriction: Sesame').props.onClick()
+  reload.flush()
+  const removed = await saveAndReadPreferences(reload)
+  assert.deepEqual(removed.allergies, ['sesame', 'Peanut-Free', '', 'Sesame', 'Soy-Free'])
+})
+
+test('legacy strings, null, empty and array allergies remain safe and lossless on save', async () => {
+  for (const allergies of ['Sesame, peanuts', 'Gluten-Free', null, '', [], ['']]) {
+    const app = appHarness(); await app.ready('A', [recipe(1)], { allergies })
+    app.state.generateWeeklyMeals(); app.flush()
+    app.state.regenerateMeal('Monday'); app.flush()
+    clickButton(app, '⚙️ Settings / Preferences')
+    assert.deepEqual((await saveAndReadPreferences(app)).allergies, allergies)
+    if (allergies === 'Sesame, peanuts') {
+      assert.ok(nodeText(app.nodes()).includes('Not currently supported: Sesame, peanuts'))
+      clickButton(app, 'Egg-Free')
+      assert.deepEqual((await saveAndReadPreferences(app)).allergies, ['Sesame, peanuts', 'Egg-Free'])
+    }
+  }
+})
+
+test('Generate and Regenerate enforce each recognized restriction and preserve locked/no-match behavior', async () => {
+  for (const tag of supportedRestrictions) {
+    const safe = { ...recipe(2), diet_tags: [tag] }
+    const safeReplacement = { ...recipe(3), diet_tags: [tag] }
+    const storage = memoryStorage(), owner = { userId: 'A', generation: 1 }
+    account.persistPlannerCache(storage, owner, owner, {
+      weeklyMeals: [{ day: 'Monday', meal: recipe(1) }], shoppingList: {}, lockedDays: []
+    })
+    const app = appHarness(storage)
+    await app.ready('A', [recipe(1), safe], { allergies: [tag] })
+    app.state.regenerateMeal('Monday'); app.flush()
+    assert.equal(app.state.weeklyMeals[0].meal.id, 2)
+    app.state.regenerateMeal('Monday'); app.flush()
+    assert.equal(app.state.weeklyMeals[0].meal.id, 2, 'no eligible replacement retains current meal')
+    app.state.generateWeeklyMeals(); app.flush()
+    assert.deepEqual(app.state.weeklyMeals.filter(item => item.meal).map(item => item.meal.id), [2])
+    assert.equal(app.state.weeklyMeals.filter(item => !item.meal).length, 6)
+    const lockedStorage = memoryStorage()
+    account.persistPlannerCache(lockedStorage, owner, owner, {
+      weeklyMeals: [{ day: 'Monday', meal: safe }], shoppingList: {}, lockedDays: ['Monday']
+    })
+    const locked = appHarness(lockedStorage)
+    await locked.ready('A', [safe, safeReplacement], { allergies: [tag] })
+    locked.state.regenerateMeal('Monday'); locked.flush()
+    assert.equal(locked.state.weeklyMeals[0].meal.id, 2)
+    locked.state.generateWeeklyMeals(); locked.flush()
+    assert.equal(locked.state.weeklyMeals[0].meal.id, 2)
+  }
+})
+
+test('both generation paths require every restriction together with every dietary preference', async () => {
+  const tags = ['Peanut-Free', 'Soy-Free', 'Vegan', 'High Protein']
+  const library = tags.map((_, index) => ({ ...recipe(index + 1), diet_tags: tags.filter((_, at) => at !== index) }))
+  const safe = { ...recipe(9), diet_tags: tags }
+  const storage = memoryStorage(), owner = { userId: 'A', generation: 1 }
+  account.persistPlannerCache(storage, owner, owner, {
+    weeklyMeals: [{ day: 'Monday', meal: library[0] }], shoppingList: {}, lockedDays: []
+  })
+  const app = appHarness(storage)
+  await app.ready('A', [...library, safe], { allergies: ['Peanut-Free', 'Soy-Free', 'Sesame'], diet_preferences: ['Vegan', 'High Protein'] })
+  app.state.regenerateMeal('Monday'); app.flush()
+  assert.equal(app.state.weeklyMeals[0].meal.id, 9)
+  app.state.generateWeeklyMeals(); app.flush()
+  assert.deepEqual(app.state.weeklyMeals.filter(item => item.meal).map(item => item.meal.id), [9])
 })
