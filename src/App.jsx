@@ -68,6 +68,7 @@ function App() {
   const [pantryLoadedSession, setPantryLoadedSession] = useState(null)
   const pantrySnapshotRef = useRef({ userId: null, items: [] })
   const [weeklyMeals, setWeeklyMeals] = useState([])
+  const [planFeedback, setPlanFeedback] = useState(null)
   const weeklyMealsRef = useRef(weeklyMeals)
   const [lockedDays, setLockedDays] = useState([])
   const [recipeUrl, setRecipeUrl] = useState("");
@@ -143,6 +144,7 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
         setWeeklyMeals(planner.weeklyMeals)
         setShoppingList(planner.shoppingList)
         setLockedDays(planner.lockedDays)
+        setPlanFeedback(null)
         if (nextId) setPlannerOwner(owner)
       }
       setSession(nextSession)
@@ -523,7 +525,13 @@ function toggleDayLock(day) {
         .filter((item) => lockedDays.includes(item.day) && item.meal)
         .map((item) => item.meal.id)
     )
-    if (recipes.length === 0) return
+    if (recipes.length === 0) {
+      setPlanFeedback("Dinnerlyst does not currently have recipes available to build the plan. Your existing plan was kept unchanged.")
+      return
+    }
+    let assignedMeals = 0
+    let preservedLockedDays = 0
+    let unfilledSelections = 0
     const preferredDietTags = onboardingAnswers.dietPreferences || []
     const requiredAllergyTags = getRequiredAllergyTags(onboardingAnswers.allergies)
 
@@ -534,6 +542,7 @@ function toggleDayLock(day) {
   )
 
   if (lockedDays.includes(day) && existingMeal) {
+  preservedLockedDays += 1
   return existingMeal
 }
 
@@ -554,7 +563,10 @@ const matchingRecipes = allergySafeRecipes.filter((recipe) =>
 
 
 const recipePool = matchingRecipes
-if (recipePool.length === 0) return { day, meal: null }
+if (recipePool.length === 0) {
+  unfilledSelections += 1
+  return { day, meal: null }
+}
 
 const randomIndex = Math.floor(
   Math.random() * recipePool.length
@@ -563,6 +575,7 @@ const randomIndex = Math.floor(
 const selectedRecipe = recipePool[randomIndex]
 
 usedRecipeIds.add(selectedRecipe.id)
+assignedMeals += 1
 
 return {
   day,
@@ -570,6 +583,10 @@ return {
 }
 })
 
+    const filledDays = meals.filter(item => item.meal).length
+    setPlanFeedback(filledDays === 7 ? null : unfilledSelections === 0
+      ? `${filledDays} of 7 days are currently filled. Some locked days have no meal. Locked days were kept unchanged; unlock an empty day before generating again.`
+      : `${filledDays} of 7 days are currently filled. ${assignedMeals === 0 ? "No additional suitable recipes were available. " : ""}Dinnerlyst couldn't find enough different recipes matching your preferences and restrictions without repeating planned recipes to fill the remaining unlocked days.${preservedLockedDays ? " Locked days were kept unchanged." : ""}`)
     setWeeklyMeals(meals)
     createShoppingList(meals)
   }
@@ -602,10 +619,15 @@ function handleTouchEnd(e, day) {
  function regenerateMeal(dayToChange) {
   console.log("dayToChange:", dayToChange)
  console.log("lockedDays:", lockedDays) 
-  if (recipes.length === 0) return
-  
+  if (recipes.length === 0) {
+    setPlanFeedback(lockedDays.includes(dayToChange)
+      ? `${dayToChange} is locked. Unlock it to choose another meal.`
+      : "Dinnerlyst does not currently have recipes available to choose an alternative. Your existing plan was kept unchanged.")
+    return
+  }
 
   if (lockedDays.includes(dayToChange)) {
+    setPlanFeedback(`${dayToChange} is locked. Unlock it to choose another meal.`)
     return
   }
   const currentMeal = weeklyMeals.find(
@@ -633,6 +655,7 @@ const options = recipes
 
 // return
 
+  let replacedMeal = false
   const updatedMeals = weeklyMeals.map((item) => {
   if (item.day === dayToChange) {
     const availableRecipes = recipes.filter(
@@ -665,6 +688,7 @@ if (recipePool.length === 0) return item
       Math.random() * recipePool.length
     )
 
+    replacedMeal = true
     return {
       day: item.day,
       meal: recipePool[randomIndex]
@@ -674,6 +698,8 @@ if (recipePool.length === 0) return item
   return item
 })
 
+  setPlanFeedback(replacedMeal ? null :
+    `No alternative recipe is available for ${dayToChange} that matches your preferences and restrictions without repeating another planned meal. ${currentMeal ? "Your current meal was kept." : "Your plan was kept unchanged."}`)
   setWeeklyMeals(updatedMeals)
   createShoppingList(updatedMeals)
 }
@@ -1602,6 +1628,13 @@ if (!saved || !ownsAccount(owner)) return
         <button className="generate-button" onClick={generateWeeklyMeals}>
           🍽️ Generate Weekly Meals + Shopping List
         </button>
+        {planFeedback && (
+          <div role="status">
+            <p>{planFeedback}</p>
+            <button type="button" className="small-button" onClick={() => setActiveTab("recipes")}>View Recipes</button>
+            <button type="button" className="small-button" onClick={() => setActiveTab("preferences")}>Review Preferences</button>
+          </div>
+        )}
       </section>
       )}
 

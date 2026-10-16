@@ -1141,3 +1141,132 @@ test('loaded Preferences detect changes across fields but not a no-op household 
   await app.ready('B', [], { household_size: 2 }); clickButton(app, '⚙️ Settings / Preferences')
   assert.deepEqual(feedbackTexts(app, 'status'), [], 'loaded baseline cannot leak between accounts')
 })
+
+
+const shortageText = app => feedbackTexts(app, 'status').join(' ')
+const eligibleMeal = id => bestRecipe(id, `Eligible ${id}`, [`Ingredient ${id}`], ['Vegan', 'Peanut-Free'])
+const shortagePreferences = { diet_preferences: ['Vegan'], allergies: ['Peanut-Free'] }
+function assertPlannerCacheMatches(app) {
+  const cached = JSON.parse(app.storage.getItem(account.plannerCacheKey('A')))
+  assert.deepEqual(cached.weeklyMeals, JSON.parse(JSON.stringify(app.state.weeklyMeals)))
+  assert.deepEqual(cached.shoppingList, app.state.shoppingList)
+  assert.deepEqual(cached.lockedDays, app.state.lockedDays)
+}
+
+test('full Generate clears stale shortage feedback and produces seven unique eligible meals', async () => {
+  const library = Array.from({ length: 7 }, (_, at) => eligibleMeal(at + 1))
+  const app = await bestApp({ library, preferences: shortagePreferences, meals: library.map((meal, at) => ({ day: ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'][at], meal })) })
+  app.state.regenerateMeal('Tuesday'); app.flush()
+  assert.ok(shortageText(app).includes('No alternative recipe is available for Tuesday'))
+  app.state.generateWeeklyMeals(); app.flush()
+  assert.equal(app.state.weeklyMeals.length, 7)
+  assert.equal(new Set(app.state.weeklyMeals.map(item => item.meal.id)).size, 7)
+  assert.equal(shortageText(app), '')
+  assertPlannerCacheMatches(app)
+})
+
+test('partial Generate explains filled count and next steps, preserves locks, filters and shopping/cache semantics', async () => {
+  const locked = bestRecipe(99, 'Locked incompatible meal', ['LockedIngredient'])
+  const old = bestRecipe(100, 'Old unlocked meal', ['OldIngredient'])
+  const app = await bestApp({ library: [locked, old, eligibleMeal(1), eligibleMeal(2)], preferences: shortagePreferences,
+    meals: [{ day: 'Monday', meal: locked }, { day: 'Tuesday', meal: old }], locks: ['Monday'],
+    shoppingList: { Other: [{ key: 'paper towels', label: 'paper towels', extra: true }] } })
+  const lockedBefore = structuredClone(app.state.weeklyMeals[0])
+  app.state.generateWeeklyMeals(); app.flush()
+  assert.equal(app.state.weeklyMeals.filter(item => item.meal).length, 3)
+  assert.deepEqual(app.state.weeklyMeals[0], lockedBefore)
+  assert.deepEqual(app.state.lockedDays, ['Monday'])
+  assert.equal(new Set(app.state.weeklyMeals.filter(item => item.meal).map(item => item.meal.id)).size, 3)
+  for (const item of app.state.weeklyMeals.slice(1).filter(item => item.meal)) {
+    assert.ok(item.meal.diet_tags.includes('Vegan')); assert.ok(item.meal.diet_tags.includes('Peanut-Free'))
+  }
+  assert.equal(app.state.weeklyMeals.some(item => item.meal?.id === 100), false)
+  assert.ok(shortageText(app).includes('3 of 7 days are currently filled.'))
+  assert.ok(shortageText(app).includes('preferences and restrictions without repeating planned recipes'))
+  assert.ok(shortageText(app).includes('Locked days were kept unchanged.'))
+  assert.equal(app.nodes().filter(node => node.type === 'p' && nodeText(node) === 'No matching meal found').length, 4)
+  const labels = Object.values(app.state.shoppingList).flat().map(item => item.label)
+  assert.ok(labels.includes('paper towels'))
+  assert.equal(labels.some(label => label.includes('OldIngredient')), false)
+  assertPlannerCacheMatches(app)
+  clickButton(app, 'View Recipes'); assert.equal(app.state.activeTab, 'recipes')
+  clickButton(app, '🍽 Plan'); clickButton(app, 'Review Preferences'); assert.equal(app.state.activeTab, 'preferences')
+})
+
+test('zero eligible Generate reports no additional recipes and preserves locked meals without validating them', async () => {
+  for (const locks of [[], ['Monday']]) {
+    const incompatible = bestRecipe(99, 'Incompatible meal', ['OldIngredient'])
+    const app = await bestApp({ library: [incompatible], preferences: shortagePreferences,
+      meals: [{ day: 'Monday', meal: incompatible }], locks })
+    app.state.generateWeeklyMeals(); app.flush()
+    assert.equal(app.state.weeklyMeals.filter(item => item.meal).length, locks.length)
+    assert.ok(shortageText(app).includes(`${locks.length} of 7 days are currently filled.`))
+    assert.ok(shortageText(app).includes('No additional suitable recipes were available.'))
+    if (locks.length) assert.equal(app.state.weeklyMeals[0].meal.id, 99)
+    assert.deepEqual(app.state.lockedDays, locks)
+    assertPlannerCacheMatches(app)
+  }
+})
+
+test('empty unavailable recipe library gives neutral feedback and preserves cached plan, shopping and locks', async () => {
+  const storage = memoryStorage(), owner = { userId: 'A', generation: 1 }
+  account.persistPlannerCache(storage, owner, owner, plan(87))
+  const app = appHarness(storage); app.emit('A'); await app.pump()
+  for (const req of app.requests) {
+    if (req.table === 'recipes') req.resolve({ data: null, error: { message: 'offline' } })
+    else if (req.table === 'user_preferences') req.resolve({ data: { household_size: 2 }, error: null })
+    else if (['pantry_items', 'checked_shopping_items'].includes(req.table)) req.resolve({ data: [], error: null })
+  }
+  await app.pump()
+  const before = structuredClone({ meals: app.state.weeklyMeals, shopping: app.state.shoppingList, locks: app.state.lockedDays })
+  app.state.generateWeeklyMeals(); app.flush()
+  assert.ok(shortageText(app).includes('Dinnerlyst does not currently have recipes available to build the plan.'))
+  assert.deepEqual({ meals: app.state.weeklyMeals, shopping: app.state.shoppingList, locks: app.state.lockedDays }, before)
+  app.state.regenerateMeal('Monday'); app.flush()
+  assert.ok(shortageText(app).includes('Monday is locked. Unlock it to choose another meal.'))
+  assertPlannerCacheMatches(app)
+})
+
+test('Regenerate no-alternative and locked messages preserve meals; a successful replacement clears feedback', async () => {
+  const a = eligibleMeal(1), b = eligibleMeal(2), unsuitable = bestRecipe(3, 'Unsuitable', ['Eggs'])
+  const app = await bestApp({ library: [a,b,unsuitable], preferences: shortagePreferences,
+    meals: [{ day: 'Monday', meal: a }, { day: 'Tuesday', meal: b }], locks: ['Monday'] })
+  const before = structuredClone(app.state.weeklyMeals)
+  app.state.regenerateMeal('Monday'); app.flush()
+  assert.ok(shortageText(app).includes('Monday is locked. Unlock it to choose another meal.'))
+  assert.deepEqual(app.state.weeklyMeals, before)
+  app.state.regenerateMeal('Tuesday'); app.flush()
+  assert.ok(shortageText(app).includes('No alternative recipe is available for Tuesday that matches your preferences and restrictions without repeating another planned meal. Your current meal was kept.'))
+  assert.deepEqual(app.state.weeklyMeals, before)
+  assertPlannerCacheMatches(app)
+  const loading = app.state.getRecipes(); await app.pump()
+  app.requests.filter(req => req.table === 'recipes' && req.method === 'select').at(-1).resolve({ data: [a,b,unsuitable,eligibleMeal(4)], error: null })
+  await loading; await app.pump()
+  app.state.regenerateMeal('Tuesday'); app.flush()
+  assert.equal(app.state.weeklyMeals[1].meal.id, 4)
+  assert.equal(app.state.weeklyMeals[0].meal.id, 1)
+  assert.deepEqual(app.state.lockedDays, ['Monday'])
+  assert.equal(shortageText(app), '')
+  assertPlannerCacheMatches(app)
+})
+
+test('generator feedback is cleared on account transitions and is not persisted in planner cache', async () => {
+  const app = await bestApp({ library: [eligibleMeal(1)] })
+  app.state.generateWeeklyMeals(); app.flush()
+  assert.ok(shortageText(app).includes('1 of 7 days'))
+  assert.equal(Object.hasOwn(JSON.parse(app.storage.getItem(account.plannerCacheKey('A'))), 'planFeedback'), false)
+  await app.ready('B')
+  assert.equal(shortageText(app), '')
+  await app.ready('A')
+  assert.equal(shortageText(app), '')
+})
+
+test('a locked empty day is preserved and explained rather than claiming new meals were validated or recipes insufficient', async () => {
+  const app = await bestApp({ library: Array.from({length:7}, (_, at) => eligibleMeal(at + 1)),
+    preferences: shortagePreferences, meals: [{ day: 'Monday', meal: null }], locks: ['Monday'] })
+  app.state.generateWeeklyMeals(); app.flush()
+  assert.equal(app.state.weeklyMeals[0].meal, null)
+  assert.equal(app.state.weeklyMeals.filter(item => item.meal).length, 6)
+  assert.ok(shortageText(app).includes('6 of 7 days are currently filled. Some locked days have no meal.'))
+  assertPlannerCacheMatches(app)
+})
