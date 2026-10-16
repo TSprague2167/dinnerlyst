@@ -67,7 +67,9 @@ test('successful reconciliation clears unavailable recipes and preserves assignm
 // JSX is compiled using the project's existing build dependency; hooks and network
 // completion are deterministic so responses can arrive in arbitrary account order.
 function appHarness(storage = memoryStorage(), weekday = null) {
-  const hooks = [], requests = [], alerts = []
+  const hooks = [], requests = [], alerts = [], confirmations = [], scrollRequests = []
+  const mountedRefs = new Set()
+  let confirmResult = true
   let index = 0, dirty = true, tree, snapshot, listener, effects = [], reloads = 0
   const same = (a, b) => a && b && a.length === b.length && a.every((value, i) => Object.is(value, b[i]))
   const React = {
@@ -118,16 +120,29 @@ function appHarness(storage = memoryStorage(), weekday = null) {
     storage: { from: () => ({ upload: path => request({ table: 'images', method: 'upload', path }), getPublicUrl: path => ({ data: { publicUrl: path } }) }) },
   }
   let source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8').replace(/^import .*\n/gm, '').replace('export default App', '')
-  source = source.replace('  if (!authReady ||', '  observe({ session, weeklyMeals, shoppingList, lockedDays, recipes, recipeName, ingredientRows, instructions, dietTags, selectedCategories, editingRecipeId, recipeUrl, imageUrl, imageFile, viewingRecipe, expandedRecipeId, swapOptions, pantryItems, checkedShoppingItems, onboardingAnswers, onboardingStep, searchTerm, pantrySearch, activeTab, selectedCategory, swipingDay, generateWeeklyMeals, regenerateMeal, cookTonight, getRecipes, addRecipe, importRecipeFromUrl, deleteRecipe, logout });\n  if (!authReady ||')
+  source = source.replace('  if (!authReady ||', '  observe({ session, weeklyMeals, shoppingList, lockedDays, recipes, recipeName, ingredientRows, instructions, dietTags, selectedCategories, editingRecipeId, recipeUrl, imageUrl, imageFile, viewingRecipe, expandedRecipeId, swapOptions, pantryItems, checkedShoppingItems, onboardingAnswers, onboardingStep, searchTerm, pantrySearch, activeTab, selectedCategory, swipingDay, generateWeeklyMeals, regenerateMeal, cookTonight, getRecipes, addRecipe, importRecipeFromUrl, deleteRecipe, beginRecipeEdit, cancelRecipeEdit, recipeSaving, logout });\n  if (!authReady ||')
   const helpers = { ...account, ...shopping, ...ingredients, ...pantry }
   const code = transformSync('App.jsx', source, { jsx: { runtime: 'classic' } }).code
   const App = new Function('React', 'useState', 'useRef', 'useEffect', 'useCallback', 'supabase', 'observe', 'window', 'alert', 'Date', ...Object.keys(helpers), code + '\nreturn App')(
-    React, React.useState, React.useRef, React.useEffect, React.useCallback, supabase, value => { snapshot = value }, { localStorage: storage, location: { reload() { reloads++ } } }, message => alerts.push(message), class extends Date { toLocaleDateString(...args) { return weekday || super.toLocaleDateString(...args) } }, ...Object.values(helpers))
+    React, React.useState, React.useRef, React.useEffect, React.useCallback, supabase, value => { snapshot = value }, { localStorage: storage, location: { reload() { reloads++ } }, confirm(message) { confirmations.push(message); return confirmResult } }, message => alerts.push(message), class extends Date { toLocaleDateString(...args) { return weekday || super.toLocaleDateString(...args) } }, ...Object.values(helpers))
   function flush() {
     let iterations = 0
     while (dirty) {
       assert.ok(iterations++ < 30, 'effects must settle')
       dirty = false; index = 0; tree = App()
+      // Commit host refs before effects, as React does after rendering the DOM.
+      for (const ref of mountedRefs) ref.current = null
+      mountedRefs.clear()
+      for (const node of nodes()) {
+        if (node.props?.ref && typeof node.type === 'string') {
+          const ref = node.props.ref
+          ref.current = { scrollIntoView(options) {
+            scrollRequests.push({ options, target: node, editingRecipeId: snapshot.editingRecipeId,
+              renderedName: nodes(node).find(item => item.props?.placeholder === 'Recipe name')?.props.value })
+          } }
+          mountedRefs.add(ref)
+        }
+      }
       const pending = effects; effects = []; pending.forEach(effect => effect())
     }
   }
@@ -144,12 +159,12 @@ function appHarness(storage = memoryStorage(), weekday = null) {
     const ownerRequests = requests.slice(start).filter(item => !item.settled && ['recipes', 'pantry_items', 'user_preferences', 'checked_shopping_items'].includes(item.table))
     for (const req of ownerRequests) {
       req.settled = true
-      req.resolve({ data: req.table === 'pantry_items' ? pantryNames.map(item_name => ({ item_name })) : req.table === 'recipes' ? library : req.table === 'user_preferences' ? (preferences == null ? null : { household_size: 2, ...preferences }) : [], error: null })
+      req.resolve({ data: req.table === 'pantry_items' ? pantryNames.map(item_name => ({ item_name })) : req.table === 'recipes' ? library.map(item => Object.hasOwn(item, 'user_id') ? item : { ...item, user_id: id }) : req.table === 'user_preferences' ? (preferences == null ? null : { household_size: 2, ...preferences }) : [], error: null })
     }
     await pump()
   }
   flush()
-  return { storage, requests, alerts, flush, pump, emit, ready, nodes, get state() { return snapshot }, get reloads() { return reloads } }
+  return { storage, requests, alerts, confirmations, scrollRequests, setConfirm(value) { confirmResult = value }, flush, pump, emit, ready, nodes, get state() { return snapshot }, get reloads() { return reloads } }
 }
 
 test('actual App restores A/B independently, clears drafts/photos/checks, and preserves same-user refresh', async () => {
@@ -754,4 +769,244 @@ test('Best Match Add Missing gives local Added/Already feedback, deduplicates, a
   assert.equal(app.nodes().some(node => node.props?.role === 'status'), false, 'Best Match feedback does not affect Pantry cards')
   await app.ready('B', [grilled], {}, ['Cheese', 'Butter'])
   assert.equal(nodeText(bestCard(app)).includes('✓ Already on Shopping List'), false)
+})
+
+const editFixture = (id, name = `Recipe ${id}`) => ({
+  ...recipe(id, name), user_id: 'A', categories: ['Chicken'], diet_tags: ['Peanut-Free'],
+  image_url: `${id}.jpg`, instructions: `Steps for ${id}`,
+  structured_ingredients: [{ amount: '2', unit: 'whole', ingredient: 'eggs' }]
+})
+const recipeWrites = app => app.requests.filter(req => req.table === 'recipes' && ['insert', 'update'].includes(req.method))
+function draftSnapshot(app) {
+  const { editingRecipeId, recipeName, ingredientRows, instructions, selectedCategories, dietTags, imageUrl, imageFile, recipeUrl } = app.state
+  return structuredClone({ editingRecipeId, recipeName, ingredientRows, instructions, selectedCategories, dietTags, imageUrl, imageFile, recipeUrl })
+}
+function assertCleanDraft(app) {
+  assert.deepEqual(draftSnapshot(app), {
+    editingRecipeId: null, recipeName: '', ingredientRows: [ingredients.emptyIngredientRow()],
+    instructions: '', selectedCategories: [], dietTags: [], imageUrl: '', imageFile: null, recipeUrl: ''
+  })
+}
+function enterImportUrl(app) {
+  app.nodes().find(node => node.props?.placeholder === 'Paste recipe URL').props.onChange({ target: { value: 'https://example.com/import' } })
+  app.flush()
+}
+function selectPendingImage(app) {
+  app.nodes().find(node => node.props?.type === 'file').props.onChange({ target: { files: [{ name: 'pending.png' }] } })
+  app.flush()
+}
+async function finishRecipeSave(app, saving, saved) {
+  const write = recipeWrites(app).at(-1)
+  write.resolve({ data: [saved], error: null }); await app.pump()
+  app.requests.filter(req => req.table === 'recipes' && req.method === 'select').at(-1).resolve({ data: [saved], error: null })
+  await saving; await app.pump()
+}
+
+test('Edit A → image-less import B clears identity/metadata/photo and inserts B; successful save resets every field', async () => {
+  const app = appHarness(); await app.ready('A', [editFixture(101, 'Recipe A')])
+  clickButton(app, '📖 Recipes'); clickButton(app, '✏️ Edit')
+  selectPendingImage(app); enterImportUrl(app)
+  const importing = app.state.importRecipeFromUrl(); await app.pump()
+  app.requests.find(req => req.table === 'import').resolve({ data: { name: 'Recipe B', ingredients: ['Bread'], instructions: ['Toast bread.'] }, error: null })
+  await importing; await app.pump()
+  assert.deepEqual(draftSnapshot(app), {
+    editingRecipeId: null, recipeName: 'Recipe B', ingredientRows: [{ amount: '', unit: '', ingredient: 'Bread' }],
+    instructions: 'Toast bread.', selectedCategories: [], dietTags: [], imageUrl: '', imageFile: null, recipeUrl: ''
+  })
+  const saving = app.state.addRecipe(); await app.pump()
+  const writes = recipeWrites(app)
+  assert.equal(writes.length, 1); assert.equal(writes[0].method, 'insert')
+  assert.equal(writes[0].payload[0].name, 'Recipe B')
+  assert.deepEqual(writes[0].payload[0].diet_tags, [])
+  assert.equal(writes[0].payload[0].image_url, '')
+  assert.equal(app.requests.some(req => req.table === 'images'), false)
+  await finishRecipeSave(app, saving, { ...recipe(102, 'Recipe B'), user_id: 'A' })
+  assertCleanDraft(app)
+  assert.equal(app.state.recipeSaving, false)
+  assert.equal(app.reloads, 1)
+})
+
+test('failed import preserves entire edit and pending image; Cancel Edit remounts file input and next Add inserts', async () => {
+  const app = appHarness(); await app.ready('A', [editFixture(101)])
+  clickButton(app, '📖 Recipes'); clickButton(app, '✏️ Edit'); selectPendingImage(app); enterImportUrl(app)
+  const original = draftSnapshot(app)
+  const importing = app.state.importRecipeFromUrl(); await app.pump()
+  app.requests.find(req => req.table === 'import').resolve({ data: null, error: { message: 'Cannot import' } })
+  await importing; await app.pump()
+  assert.deepEqual(draftSnapshot(app), original)
+  assert.ok(app.alerts.includes('Could not import that recipe.'))
+  const fileKey = app.nodes().find(node => node.props?.type === 'file').props.key
+  clickButton(app, '🍽 Plan'); clickButton(app, '📖 Recipes')
+  assert.deepEqual(draftSnapshot(app), original, 'ordinary navigation preserves drafts')
+  clickButton(app, 'Cancel Edit')
+  assertCleanDraft(app)
+  assert.notEqual(app.nodes().find(node => node.props?.type === 'file').props.key, fileKey)
+  app.nodes().find(node => node.props?.placeholder === 'Recipe name').props.onChange({ target: { value: 'Fresh recipe' } })
+  app.nodes().find(node => node.props?.placeholder === 'Ingredient name').props.onChange({ target: { value: 'Rice' } })
+  app.flush()
+  const saving = app.state.addRecipe(); await app.pump()
+  assert.equal(recipeWrites(app)[0].method, 'insert')
+  assert.equal(app.requests.some(req => req.table === 'images'), false)
+  await finishRecipeSave(app, saving, { ...recipe(103), user_id: 'A' }); assertCleanDraft(app)
+})
+
+test('late same-account imports cannot overwrite another edit, cancelled edit, or newer import', async () => {
+  for (const transition of ['edit', 'cancel', 'newer import']) {
+    const app = appHarness(); await app.ready('A', [editFixture(101), editFixture(102)])
+    clickButton(app, '📖 Recipes'); app.state.beginRecipeEdit(app.state.recipes[0]); app.flush(); enterImportUrl(app)
+    const first = app.state.importRecipeFromUrl(); await app.pump()
+    const response = app.requests.find(req => req.table === 'import')
+    if (transition === 'edit') { app.state.beginRecipeEdit(app.state.recipes[1]); app.flush() }
+    else if (transition === 'cancel') clickButton(app, 'Cancel Edit')
+    else {
+      const next = app.state.importRecipeFromUrl(); await app.pump()
+      app.requests.filter(req => req.table === 'import').at(-1).resolve({ data: { name: 'Newer import', ingredients: ['Rice'], instructions: [], image: 'new.jpg' }, error: null })
+      await next; await app.pump()
+    }
+    const expected = draftSnapshot(app)
+    response.resolve({ data: { name: 'Stale import', ingredients: ['Bread'], image: 'stale.jpg' }, error: null })
+    await first; await app.pump()
+    assert.deepEqual(draftSnapshot(app), expected)
+  }
+})
+
+test('image upload failure aborts Add and Edit, preserves retry state, and successful retry fully resets', async () => {
+  for (const editing of [true, false]) {
+    const app = appHarness(); await app.ready('A', [editFixture(101)])
+    clickButton(app, '📖 Recipes'); clickButton(app, '✏️ Edit')
+    if (!editing) clickButton(app, 'Cancel Edit')
+    if (!editing) {
+      app.nodes().find(node => node.props?.placeholder === 'Recipe name').props.onChange({ target: { value: 'New recipe' } })
+      app.nodes().find(node => node.props?.placeholder === 'Ingredient name').props.onChange({ target: { value: 'Eggs' } }); app.flush()
+    }
+    selectPendingImage(app)
+    const before = draftSnapshot(app)
+    const saving = app.state.addRecipe(); await app.pump()
+    app.requests.find(req => req.table === 'images').resolve({ error: { message: 'Storage unavailable' } })
+    await saving; await app.pump()
+    assert.equal(recipeWrites(app).length, 0)
+    assert.deepEqual(draftSnapshot(app), before)
+    assert.equal(app.state.recipes[0].image_url, '101.jpg')
+    assert.equal(app.state.recipeSaving, false)
+    assert.ok(app.alerts.at(-1).includes('Your recipe was not saved'))
+    const retry = app.state.addRecipe(); await app.pump()
+    app.requests.filter(req => req.table === 'images').at(-1).resolve({ error: null }); await app.pump()
+    const write = recipeWrites(app)[0]
+    assert.equal(write.method, editing ? 'update' : 'insert')
+    assert.ok((editing ? write.payload.image_url : write.payload[0].image_url).startsWith('A/'))
+    await finishRecipeSave(app, retry, { ...recipe(101), user_id: 'A' }); assertCleanDraft(app)
+  }
+})
+
+test('saving blocks overlapping writes, Edit/Import/Cancel transitions and pending imports; navigation remains available', async () => {
+  const app = appHarness(); await app.ready('A', [editFixture(101), editFixture(102)])
+  clickButton(app, '📖 Recipes'); app.state.beginRecipeEdit(app.state.recipes[0]); app.flush(); enterImportUrl(app)
+  const importing = app.state.importRecipeFromUrl(); await app.pump()
+  selectPendingImage(app)
+  const saving = app.state.addRecipe(), duplicate = app.state.addRecipe(); await duplicate; await app.pump()
+  assert.equal(app.requests.filter(req => req.table === 'images').length, 1)
+  assert.equal(app.state.recipeSaving, true)
+  assert.equal(app.nodes().find(node => node.type === 'fieldset').props.disabled, true)
+  const snapshot = draftSnapshot(app)
+  app.state.beginRecipeEdit(app.state.recipes[1]); app.state.cancelRecipeEdit()
+  await app.state.importRecipeFromUrl(); app.flush()
+  assert.deepEqual(draftSnapshot(app), snapshot)
+  assert.equal(app.requests.filter(req => req.table === 'import').length, 1)
+  app.requests.find(req => req.table === 'import').resolve({ data: { name: 'Stale response', ingredients: ['Rice'] }, error: null })
+  await importing; await app.pump()
+  assert.deepEqual(draftSnapshot(app), snapshot)
+  clickButton(app, '🍽 Plan'); assert.equal(app.state.activeTab, 'planner')
+  app.requests.find(req => req.table === 'images').resolve({ error: null }); await app.pump()
+  await app.state.addRecipe(); assert.equal(recipeWrites(app).length, 1)
+  assert.equal(recipeWrites(app)[0].constraints.id, 101)
+  await finishRecipeSave(app, saving, { ...recipe(101), user_id: 'A' }); assertCleanDraft(app)
+})
+
+test('owned deletion requires confirmation and affected row; errors/zero rows preserve cards and drafts', async () => {
+  const app = appHarness(); await app.ready('A', [editFixture(101), editFixture(102)])
+  app.setConfirm(false); await app.state.deleteRecipe(101); await app.pump()
+  assert.equal(app.requests.some(req => req.method === 'delete'), false)
+  assert.ok(app.confirmations[0].includes('cannot be undone'))
+  app.setConfirm(true)
+  for (const error of [{ message: 'Delete denied' }, null]) {
+    const deleting = app.state.deleteRecipe(101); await app.pump()
+    const request = app.requests.filter(req => req.method === 'delete').at(-1)
+    assert.deepEqual(request.constraints, { id: 101, user_id: 'A' })
+    request.resolve({ data: [], error }); await deleting; await app.pump()
+    assert.equal(app.state.recipes.length, 2)
+    assert.ok(app.alerts.at(-1).includes(error ? 'Delete denied' : 'not deleted'))
+  }
+  app.state.beginRecipeEdit(app.state.recipes[0]); app.flush()
+  const deleting = app.state.deleteRecipe(101); await app.pump()
+  app.requests.filter(req => req.method === 'delete').at(-1).resolve({ data: [{ id: 101 }], error: null })
+  await deleting; await app.pump()
+  assert.deepEqual(app.state.recipes.map(item => item.id), [102]); assertCleanDraft(app)
+})
+
+test('shared recipes retain inline viewing and planning eligibility without personal mutation controls', async () => {
+  const shared = { ...editFixture(101, 'Shared recipe'), user_id: null }
+  const app = appHarness(); await app.ready('A', [shared, editFixture(102, 'Owned recipe')])
+  clickButton(app, '📖 Recipes')
+  const cards = app.nodes().filter(node => node.props?.className === 'recipe-card')
+  const sharedCard = cards.find(node => nodeText(node).includes('Shared recipe'))
+  const ownedCard = cards.find(node => nodeText(node).includes('Owned recipe'))
+  const buttons = card => app.nodes(card).filter(node => node.type === 'button').map(nodeText)
+  assert.deepEqual(buttons(sharedCard), ['View Recipe'])
+  assert.ok(buttons(ownedCard).some(text => text.includes('Edit')))
+  assert.ok(buttons(ownedCard).includes('Delete'))
+  app.nodes(sharedCard).find(node => node.type === 'button').props.onClick(); app.flush()
+  assert.equal(app.state.expandedRecipeId, 101)
+  app.state.beginRecipeEdit(app.state.recipes[0]); await app.state.deleteRecipe(101); app.flush()
+  assert.equal(app.state.editingRecipeId, null)
+  assert.equal(app.confirmations.length, 0)
+  assert.equal(app.requests.some(req => req.method === 'delete'), false)
+  app.state.generateWeeklyMeals(); app.flush()
+  assert.ok(app.state.weeklyMeals.some(item => item.meal?.id === 101))
+})
+
+test('zero-row recipe update retains edit and retry state instead of reloading', async () => {
+  const app = appHarness(); await app.ready('A', [editFixture(101)])
+  app.state.beginRecipeEdit(app.state.recipes[0]); app.flush()
+  const snapshot = draftSnapshot(app)
+  const saving = app.state.addRecipe(); await app.pump()
+  recipeWrites(app)[0].resolve({ data: [], error: null }); await saving; await app.pump()
+  assert.deepEqual(draftSnapshot(app), snapshot)
+  assert.equal(app.state.recipeSaving, false)
+  assert.equal(app.reloads, 0)
+  assert.ok(app.alerts.at(-1).includes('not saved'))
+})
+
+test('late same-account deletion cannot reset a subsequently selected edit', async () => {
+  const app = appHarness(); await app.ready('A', [editFixture(101), editFixture(102)])
+  app.state.beginRecipeEdit(app.state.recipes[0]); app.flush()
+  const deleting = app.state.deleteRecipe(101); await app.pump()
+  app.state.beginRecipeEdit(app.state.recipes[1]); app.flush()
+  const expected = draftSnapshot(app)
+  app.requests.find(req => req.method === 'delete').resolve({ data: [{ id: 101 }], error: null })
+  await deleting; await app.pump()
+  assert.deepEqual(draftSnapshot(app), expected)
+  assert.deepEqual(app.state.recipes.map(item => item.id), [102])
+})
+
+
+test('Edit scrolls the actual builder after edit content renders, including repeated editing of the same recipe', async () => {
+  const app = appHarness(); await app.ready('A', [editFixture(101, 'Scroll target recipe')])
+  clickButton(app, '📖 Recipes')
+  assert.equal(app.scrollRequests.length, 0)
+  buttonNamed(app, '✏️ Edit').props.onClick()
+  assert.equal(app.scrollRequests.length, 0, 'no scroll before React commits the edit render')
+  app.flush()
+  assert.equal(app.scrollRequests.length, 1)
+  const request = app.scrollRequests[0]
+  assert.equal(request.target.props.className, 'card recipe-builder-section')
+  assert.equal(request.target.props.hidden, false)
+  assert.equal(request.editingRecipeId, 101)
+  assert.equal(request.renderedName, 'Scroll target recipe')
+  assert.deepEqual(request.options, { behavior: 'smooth', block: 'start' })
+  assert.ok(app.nodes(request.target).some(node => node.type === 'button' && nodeText(node) === 'Save Changes'))
+  clickButton(app, '✏️ Edit')
+  assert.equal(app.scrollRequests.length, 2, 'same-recipe Edit also requests a fresh scroll')
+  clickButton(app, 'Cancel Edit')
+  clickButton(app, '🍽 Plan'); clickButton(app, '📖 Recipes')
+  assert.equal(app.scrollRequests.length, 2, 'Cancel/navigation do not issue stale scroll requests')
 })

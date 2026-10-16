@@ -79,6 +79,12 @@ const [onboardingAnswers, setOnboardingAnswers] = useState(defaultOnboardingAnsw
 
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [imageFile, setImageFile] = useState(null)
+  const recipeBuilderRef = useRef(null)
+  const pendingEditScroll = useRef(false)
+  const recipeDraftGeneration = useRef(0)
+  const recipeSaveOperation = useRef(null)
+  const [recipeSaving, setRecipeSaving] = useState(false)
+  const [recipeFormGeneration, setRecipeFormGeneration] = useState(0)
   const [selectedCategories, setSelectedCategories] = useState([])
 
   const currentShoppingItems = Object.values(shoppingList).flat().filter((item) => !asShoppingItem(item).pantryHidden)
@@ -99,15 +105,9 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
         accountRef.current = owner
         setPlannerOwner(null)
         setRecipes([])
-        setRecipeName("")
-        setIngredientRows([emptyIngredientRow()])
-        setInstructions("")
-        setDietTags([])
-        setSelectedCategories([])
-        setEditingRecipeId(null)
-        setRecipeUrl("")
-        setImageUrl("")
-        setImageFile(null)
+        recipeSaveOperation.current = null
+        setRecipeSaving(false)
+        resetRecipeDraft()
         setViewingRecipe(null)
         setExpandedRecipeId(null)
         setPantryAddFeedback({})
@@ -333,6 +333,7 @@ useEffect(() => {
       const rows = getIngredientRows(recipe)
       return {
         id: recipe.id,
+        user_id: recipe.user_id,
         name: recipe.name,
         categories: recipe.categories || [],
         diet_tags: recipe.diet_tags || [],
@@ -356,159 +357,150 @@ useEffect(() => {
     if (userId && owner.userId === userId && owner.generation === accountGeneration) getRecipes(owner)
   }, [userId, accountGeneration, getRecipes])
 
+useEffect(() => {
+  if (!pendingEditScroll.current || !editingRecipeId || activeTab !== "recipes" || !recipeBuilderRef.current) return
+  pendingEditScroll.current = false
+  recipeBuilderRef.current.scrollIntoView({ behavior: "smooth", block: "start" })
+}, [editingRecipeId, recipeFormGeneration, activeTab])
+
+function resetRecipeDraft() {
+  pendingEditScroll.current = false
+  recipeDraftGeneration.current += 1
+  setRecipeFormGeneration(value => value + 1)
+  setEditingRecipeId(null)
+  setRecipeName("")
+  setIngredientRows([emptyIngredientRow()])
+  setInstructions("")
+  setSelectedCategories([])
+  setDietTags([])
+  setImageUrl("")
+  setImageFile(null)
+  setRecipeUrl("")
+  setCategory("Dinner")
+}
+function beginRecipeEdit(recipe) {
+  if (recipeSaveOperation.current || recipe.user_id !== plannerOwner?.userId || !ownsAccount(plannerOwner)) return
+  resetRecipeDraft()
+  setRecipeName(recipe.name)
+  const rows = getIngredientRows(recipe)
+  setIngredientRows(rows.length ? rows.map(row => ({ ...row })) : [emptyIngredientRow()])
+  setSelectedCategories([...(recipe.categories || [])])
+  setImageUrl(recipe.image_url || "")
+  setInstructions(recipe.instructions || "")
+  setDietTags([...(recipe.diet_tags || [])])
+  setEditingRecipeId(recipe.id)
+  pendingEditScroll.current = true
+}
+function cancelRecipeEdit() {
+  if (recipeSaveOperation.current) return
+  resetRecipeDraft()
+}
 async function uploadRecipeImage(file, owner) {
+  if (!ownsAccount(owner) || !file) return ""
+  const fileName = `${owner.userId}/${Date.now()}-${file.name}`
+  const { error } = await supabase.storage.from("recipe-images").upload(fileName, file)
   if (!ownsAccount(owner)) return ""
-  if (!file) return ""
-
- const fileName = `${owner.userId}/${Date.now()}-${file.name}`
-
-  const { error } = await supabase.storage
-    .from("recipe-images")
-    .upload(fileName, file)
-
-  if (!ownsAccount(owner)) return ""
-
-  if (error) {
-    alert(error.message)
-    console.log(error)
-    return ""
-  }
-
-  const { data } = supabase.storage
-    .from("recipe-images")
-    .getPublicUrl(fileName)
-
+  if (error) throw new Error(`Image upload failed. Your recipe was not saved. ${error.message}`)
+  const { data } = supabase.storage.from("recipe-images").getPublicUrl(fileName)
   return data.publicUrl
 }
 async function importRecipeFromUrl() {
   const owner = plannerOwner
-  if (!owner?.userId || !ownsAccount(owner)) return
+  if (!owner?.userId || !ownsAccount(owner) || recipeSaveOperation.current) return
   if (!recipeUrl.trim()) {
     alert("Paste a recipe URL first.")
     return
   }
-
-  const { data, error } = await supabase.functions.invoke("import-recipe", {
-    body: { url: recipeUrl }
-  })
-  if (!ownsAccount(owner)) return
-
-  if (error) {
+  const generation = ++recipeDraftGeneration.current
+  try {
+    const { data, error } = await supabase.functions.invoke("import-recipe", {
+      body: { url: recipeUrl }
+    })
+    if (!ownsAccount(owner) || recipeDraftGeneration.current !== generation) return
+    if (error || !data || typeof data !== "object") throw new Error("Could not import that recipe.")
+    const importedRows = rowsFromIngredientStrings(data.ingredients)
+    // Only a successful import replaces the draft; imports always create new recipes.
+    resetRecipeDraft()
+    setRecipeName(data.name || "")
+    setIngredientRows(importedRows.length ? importedRows : [emptyIngredientRow()])
+    setInstructions(Array.isArray(data.instructions) ? data.instructions.join("\n\n") : "")
+    setImageUrl(data.image || "")
+  } catch (error) {
+    if (!ownsAccount(owner) || recipeDraftGeneration.current !== generation) return
     console.error(error)
     alert("Could not import that recipe.")
+  }
+}
+async function addRecipe() {
+  const owner = plannerOwner
+  if (!owner?.userId || !ownsAccount(owner) || recipeSaveOperation.current) return
+  if (editingRecipeId && !recipes.some(recipe => recipe.id === editingRecipeId && recipe.user_id === owner.userId)) {
+    alert("You can only edit your own recipes.")
     return
   }
-
-  setRecipeName(data.name || "")
-  const importedRows = rowsFromIngredientStrings(data.ingredients)
-  setIngredientRows(importedRows.length ? importedRows : [emptyIngredientRow()])
-  setInstructions(
-  Array.isArray(data.instructions)
-    ? data.instructions.join("\n\n")
-    : ""
-)
-
-  if (data.image) {
-    setImageUrl(data.image)
+  const { rows, error: ingredientError } = validateIngredientRows(ingredientRows)
+  if (!recipeName.trim() || ingredientError) {
+    alert(ingredientError || "Please enter a recipe name.")
+    return
   }
-}
-  async function addRecipe() {
-    const owner = plannerOwner
-    if (!owner?.userId || !ownsAccount(owner)) return
-    
-
-   const { rows, error: ingredientError } = validateIngredientRows(ingredientRows)
-   if (!recipeName.trim() || ingredientError) {
-     alert(ingredientError || "Please enter a recipe name.")
-     return
-   }
-   const ingredients = rows.map(formatIngredient).join(", ")
-
+  const operation = {}
+  recipeSaveOperation.current = operation
+  setRecipeSaving(true)
+  recipeDraftGeneration.current += 1 // Any pending import belongs to the pre-save draft.
+  try {
     let uploadedImageUrl = imageUrl
-
-if (imageFile) {
-  uploadedImageUrl = await uploadRecipeImage(imageFile, owner)
-}
-
+    if (imageFile) uploadedImageUrl = await uploadRecipeImage(imageFile, owner)
     if (!ownsAccount(owner)) return
-    let data, error
-
-if (editingRecipeId) {
-  const result = await supabase
-    .from('recipes')
-    .update({
+    const payload = {
       name: recipeName,
-      ingredients,
+      ingredients: rows.map(formatIngredient).join(", "),
       structured_ingredients: rows,
       instructions,
       categories: selectedCategories,
       image_url: uploadedImageUrl,
       diet_tags: dietTags,
-    })
-    .eq('id', (editingRecipeId))
-    .eq('user_id', owner.userId)
-
-    .select("*")
-    
-
-  data = result.data
-  error = result.error
-
-} else {
-
-  const result = await supabase
-    .from('recipes')
-    .insert([
-      {
-        name: recipeName,
-        ingredients,
-        structured_ingredients: rows,
-        instructions,
-        categories: selectedCategories,
-        image_url: uploadedImageUrl,
-        user_id: owner.userId,
-        diet_tags: dietTags
-      }
-    ])
-    .select()
-
-  data = result.data
-  error = result.error
-}
-
-    if (!ownsAccount(owner)) return
-    if (error) {
-      console.log(error)
-      alert(error.message)
-      return
     }
-
+    const { data, error } = editingRecipeId
+      ? await supabase.from('recipes').update(payload).eq('id', editingRecipeId).eq('user_id', owner.userId).select("*")
+      : await supabase.from('recipes').insert([{ ...payload, user_id: owner.userId }]).select("*")
+    if (!ownsAccount(owner)) return
+    if (error) throw error
+    if (!data?.length) throw new Error("Your recipe was not saved. It may no longer be available to edit.")
     await getRecipes(owner)
     if (!ownsAccount(owner)) return
-
-setRecipeName("")
-setSelectedCategories([])
-setIngredientRows([emptyIngredientRow()])
-setEditingRecipeId(null)
-setCategory("Dinner")
-setImageUrl("")
-setImageFile(null)
-window.location.reload()
-  }
-
-  async function deleteRecipe(id) {
-    const owner = plannerOwner
-    if (!owner?.userId || !ownsAccount(owner)) return
-    const { error } = await supabase.from('recipes').delete().eq('id', id).eq('user_id', owner.userId)
+    resetRecipeDraft()
+    window.location.reload()
+  } catch (error) {
     if (!ownsAccount(owner)) return
-
-    if (error) {
-      console.log(error)
-      return
+    console.error(error)
+    alert(error.message || "Could not save that recipe. Your draft has been preserved.")
+  } finally {
+    if (recipeSaveOperation.current === operation) {
+      recipeSaveOperation.current = null
+      setRecipeSaving(false)
     }
-
-    setRecipes(recipes.filter((recipe) => recipe.id !== id))
   }
+}
+async function deleteRecipe(id) {
+  const owner = plannerOwner
+  if (!owner?.userId || !ownsAccount(owner) || recipeSaveOperation.current) return
+  const recipe = recipes.find(item => item.id === id && item.user_id === owner.userId)
+  if (!recipe) return
+  if (!window.confirm(`Delete "${recipe.name}"? This cannot be undone.`)) return
+  const generation = recipeDraftGeneration.current
+  try {
+    const { data, error } = await supabase.from('recipes').delete().eq('id', id).eq('user_id', owner.userId).select("id")
+    if (!ownsAccount(owner)) return
+    if (error) throw error
+    if (!data?.some(item => item.id === id)) throw new Error("Recipe was not deleted. It may no longer be available to delete.")
+    setRecipes(current => current.filter(item => item.id !== id))
+    if (editingRecipeId === id && recipeDraftGeneration.current === generation) resetRecipeDraft()
+  } catch (error) {
+    if (!ownsAccount(owner)) return
+    console.error(error)
+    alert(error.message || "Could not delete that recipe.")
+  }
+}
 function toggleDayLock(day) {
   if (lockedDays.includes(day)) {
     setLockedDays(lockedDays.filter((lockedDay) => lockedDay !== day))
@@ -1225,10 +1217,10 @@ if (!saved || !ownsAccount(owner)) return
       </header>
 
 
-      <section className="card recipe-builder-section" hidden={activeTab !== "recipes"}>
+      <section ref={recipeBuilderRef} className="card recipe-builder-section" hidden={activeTab !== "recipes"}>
         <h2>Add a Recipe</h2>
 
-  <div className="form recipe-form-modern">
+  <fieldset className="form recipe-form-modern" disabled={recipeSaving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
 
   <div className="recipe-import-modern">
     <div>
@@ -1269,7 +1261,7 @@ if (!saved || !ownsAccount(owner)) return
       <label>Recipe photo</label>
       <input
         type="file"
-        key={`${userId}:${accountGeneration}:${editingRecipeId || "new-recipe"}`}
+        key={`${userId}:${accountGeneration}:${recipeFormGeneration}`}
         accept="image/*"
         onChange={(e) => setImageFile(e.target.files[0])}
       />
@@ -1563,9 +1555,13 @@ if (!saved || !ownsAccount(owner)) return
   className="primary-button recipe-save-button"
   onClick={addRecipe}
 >
-  {editingRecipeId ? "Save Changes" : "Add Recipe"}
-</button> 
-        </div>
+  {recipeSaving ? "Saving…" : editingRecipeId ? "Save Changes" : "Add Recipe"}
+</button>
+{editingRecipeId && (
+  <button type="button" className="small-button" onClick={cancelRecipeEdit}>Cancel Edit</button>
+)}
+{recipeSaving && <p role="status">Saving your recipe…</p>}
+        </fieldset>
       </section>
 
       {activeTab === "planner" && (
@@ -1686,22 +1682,11 @@ if (!saved || !ownsAccount(owner)) return
           </div>
 
           <div className="recipe-actions">
-            <button
-              className="small-button"
-              onClick={() => {
-                setRecipeName(recipe.name)
-                const rows = getIngredientRows(recipe)
-                setIngredientRows(rows.length ? rows.map((row) => ({ ...row })) : [emptyIngredientRow()])
-                setSelectedCategories([...(recipe.categories || [])])
-                setImageUrl(recipe.image_url || "")
-                setImageFile(null)
-                setInstructions(recipe.instructions || "")
-                setDietTags(recipe.diet_tags || [])
-                setEditingRecipeId(recipe.id)
-              }}
-            >
-              ✏️ Edit
-            </button>
+            {recipe.user_id === userId && (
+              <button className="small-button" disabled={recipeSaving} onClick={() => beginRecipeEdit(recipe)}>
+                ✏️ Edit
+              </button>
+            )}
             <button
   className="small-button"
   type="button"
@@ -1714,12 +1699,11 @@ if (!saved || !ownsAccount(owner)) return
   {expandedRecipeId === recipe.id ? "Hide Recipe" : "View Recipe"}
 </button>
 
-            <button
-              className="delete-button"
-              onClick={() => deleteRecipe(recipe.id)}
-            >
-              Delete
-            </button>
+            {recipe.user_id === userId && (
+              <button className="delete-button" disabled={recipeSaving} onClick={() => deleteRecipe(recipe.id)}>
+                Delete
+              </button>
+            )}
           </div>
         </div>
       ))
