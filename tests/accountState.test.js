@@ -116,7 +116,7 @@ function appHarness(storage = memoryStorage(), weekday = null) {
       }
       return query
     },
-    functions: { invoke: () => request({ table: 'import', method: 'import' }) },
+    functions: { invoke: (_name, options) => request({ table: 'import', method: 'import', options }) },
     storage: { from: () => ({ upload: path => request({ table: 'images', method: 'upload', path }), getPublicUrl: path => ({ data: { publicUrl: path } }) }) },
   }
   let source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8').replace(/^import .*\n/gm, '').replace('export default App', '')
@@ -1674,4 +1674,20 @@ test('partial uncheck reconciliation waits for other item writes and preserves t
   latestRequest(app, 'checked_shopping_items').resolve({ data: [{ item_name: milk }, { item_name: 'old rice' }], error: null })
   await Promise.all([unchecking, checking]); await app.pump()
   assert.deepEqual(app.state.checkedShoppingItems, [milk, 'old rice'])
+})
+
+test('client import uses a longer bounded timeout and preserves the draft when the invocation times out', async () => {
+  const app = appHarness(); await app.ready('A', [editFixture(101)]); clickButton(app, '📖 Recipes')
+  app.state.beginRecipeEdit(app.state.recipes[0]); app.flush(); enterImportUrl(app)
+  const before = draftSnapshot(app)
+  const importing = app.state.importRecipeFromUrl(); await app.pump()
+  const invocation = latestRequest(app, 'import', 'import')
+  assert.equal(invocation.options.timeout, 40_000)
+  assert.equal(app.state.importing, true)
+  invocation.resolve({ data: null, error: { message: 'Function timed out' } })
+  await importing; await app.pump()
+  assert.deepEqual(draftSnapshot(app), before)
+  assert.equal(app.state.importing, false)
+  assert.equal(app.nodes().find(node => node.type === 'fieldset').props.disabled, false)
+  assert.equal(app.alerts.at(-1), 'Could not import that recipe.')
 })
