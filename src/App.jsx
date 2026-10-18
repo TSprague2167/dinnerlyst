@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { supabase } from './supabase'
+import { supabase, initialAuthCallbackType } from './supabase'
 import './App.css'
 import { discardLegacyCaches, loadPlannerCache, persistPlannerCache, nextAccountOwner, isCurrentAccount } from './accountState'
 import { getPantryRecipeMatch } from './pantry'
@@ -53,6 +53,14 @@ function App() {
   const ownsAccount = useCallback(owner => isCurrentAccount(owner, accountRef.current), [])
   const [authReady, setAuthReady] = useState(false)
   const [authLoadError, setAuthLoadError] = useState(null)
+  const pendingAuthCallback = useRef(initialAuthCallbackType)
+  const [passwordSetupUserId, setPasswordSetupUserId] = useState(null)
+  const [newPassword, setNewPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [passwordSetupStatus, setPasswordSetupStatus] = useState(null)
+  const passwordSetupOperation = useRef(null)
+  const passwordSetupRequired = Boolean(userId && (passwordSetupUserId === userId ||
+    (session.user.invited_at && session.user.user_metadata?.password_setup_complete !== true)))
   const [preferenceLoad, setPreferenceLoad] = useState(null)
   const [preferenceRetry, setPreferenceRetry] = useState(0)
   const [preferenceSave, setPreferenceSave] = useState(null)
@@ -127,12 +135,21 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
   useEffect(() => {
     let active = true
     let authEventReceived = false
-    function transitionAccount(nextSession) {
+    function transitionAccount(nextSession, event = null) {
       const nextId = nextSession?.user?.id || null
       const previous = accountRef.current
+      // A delayed update/refresh must not restore the account that was just left.
+      if ((event === "USER_UPDATED" || event === "TOKEN_REFRESHED") && nextId !== previous.userId) return
+      const callbackType = pendingAuthCallback.current
+      pendingAuthCallback.current = null
       const owner = nextAccountOwner(previous, nextId)
       if (owner !== previous) {
         accountRef.current = owner
+        passwordSetupOperation.current = null
+        setPasswordSetupUserId(null)
+        setNewPassword("")
+        setConfirmPassword("")
+        setPasswordSetupStatus(null)
         setPlannerOwner(null)
         setRecipes([])
         recipeLoadSequence.current += 1
@@ -188,6 +205,12 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
         setPlanFeedback(null)
         if (nextId) setPlannerOwner(owner)
       }
+      const invitedNeedsPassword = nextSession?.user.invited_at &&
+        nextSession.user.user_metadata?.password_setup_complete !== true
+      if (nextId && (invitedNeedsPassword || event === "PASSWORD_RECOVERY" || callbackType === "recovery" ||
+        (callbackType === "invite" && nextSession.user.user_metadata?.password_setup_complete !== true))) {
+        setPasswordSetupUserId(nextId)
+      }
       setSession(nextSession)
     }
     discardLegacyCaches(plannerStorage())
@@ -202,10 +225,10 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
       setAuthReady(true)
     })
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       authEventReceived = true
       setAuthLoadError(null)
-      transitionAccount(session)
+      transitionAccount(session, event)
       setAuthReady(true)
     })
 
@@ -899,7 +922,43 @@ const pantryMatches = recipes
     return updatedList
   })
 }
-  if (!authReady || (session && (plannerOwner?.userId !== userId)) || (session && (preferenceLoad?.userId !== userId || preferenceLoad.status === "loading"))) {
+  async function completePasswordSetup() {
+    const owner = plannerOwner
+    if (!owner?.userId || !ownsAccount(owner) || !passwordSetupRequired || passwordSetupOperation.current) return
+    if (newPassword.length < 8) {
+      setPasswordSetupStatus({ status: "error", message: "Use at least 8 characters for your password." })
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordSetupStatus({ status: "error", message: "Passwords do not match." })
+      return
+    }
+    const operation = {}
+    passwordSetupOperation.current = operation
+    setPasswordSetupStatus({ status: "saving" })
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        password: newPassword,
+        data: { password_setup_complete: true },
+      })
+      if (!ownsAccount(owner) || passwordSetupOperation.current !== operation) return
+      if (error) throw error
+      if (data.user?.id !== owner.userId || data.user.user_metadata?.password_setup_complete !== true) {
+        throw new Error("Could not complete password setup. Please try again.")
+      }
+      setSession(current => current?.user.id === owner.userId ? { ...current, user: data.user } : current)
+      setPasswordSetupUserId(null)
+      setNewPassword("")
+      setConfirmPassword("")
+      setPasswordSetupStatus(null)
+    } catch (error) {
+      if (!ownsAccount(owner) || passwordSetupOperation.current !== operation) return
+      setPasswordSetupStatus({ status: "error", message: error.message || "Could not set your password. Please try again." })
+    } finally {
+      if (passwordSetupOperation.current === operation) passwordSetupOperation.current = null
+    }
+  }
+  if (!authReady || (session && (plannerOwner?.userId !== userId))) {
     return <div className="app" role="status">Loading Dinnerlyst…</div>
   }
   if (authLoadError) {
@@ -907,6 +966,31 @@ const pantryMatches = recipes
       <p>Could not load your sign-in session. Please try again.</p>
       <button className="primary-button" onClick={() => window.location.reload()}>Retry</button>
     </div>
+  }
+  if (session && passwordSetupRequired) {
+    const saving = passwordSetupStatus?.status === "saving"
+    return <div className="app">
+      <section className="card auth-card">
+        <h1>Set Your Password</h1>
+        <p>Choose a password to finish setting up your account. Use at least 8 characters.</p>
+        <form className="form" noValidate onSubmit={event => { event.preventDefault(); return completePasswordSetup() }}>
+          <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+            <label htmlFor="setup-password">Password</label>
+            <input id="setup-password" type="password" autoComplete="new-password" minLength={8} required
+              value={newPassword} onChange={event => setNewPassword(event.target.value)} />
+            <label htmlFor="setup-confirm-password">Confirm Password</label>
+            <input id="setup-confirm-password" type="password" autoComplete="new-password" minLength={8} required
+              value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} />
+            <button className="primary-button" type="submit" disabled={saving}>{saving ? "Saving..." : "Set Password"}</button>
+          </fieldset>
+          {saving && <p role="status">Saving your password…</p>}
+          {passwordSetupStatus?.status === "error" && <p role="alert">{passwordSetupStatus.message}</p>}
+        </form>
+      </section>
+    </div>
+  }
+  if (session && (preferenceLoad?.userId !== userId || preferenceLoad.status === "loading")) {
+    return <div className="app" role="status">Loading Dinnerlyst…</div>
   }
   if (session && preferenceLoad?.status === "error") {
     return <div className="app" role="alert">

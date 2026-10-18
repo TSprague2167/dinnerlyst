@@ -66,8 +66,9 @@ test('successful reconciliation clears unavailable recipes and preserves assignm
 // Exercise the actual App handlers/effects without a browser or live Supabase.
 // JSX is compiled using the project's existing build dependency; hooks and network
 // completion are deterministic so responses can arrive in arbitrary account order.
-function appHarness(storage = memoryStorage(), weekday = null) {
+function appHarness(storage = memoryStorage(), weekday = null, callbackType = null) {
   const hooks = [], requests = [], alerts = [], confirmations = [], scrollRequests = []
+  const initialSession = deferred()
   const mountedRefs = new Set()
   let confirmResult = true
   let index = 0, dirty = true, tree, snapshot, listener, effects = [], reloads = 0
@@ -95,7 +96,8 @@ function appHarness(storage = memoryStorage(), weekday = null) {
   function request(details) { const pending = deferred(); requests.push({ ...details, ...pending }); return pending.promise }
   const supabase = {
     auth: {
-      getSession: () => new Promise(() => {}),
+      getSession: () => initialSession.promise,
+      updateUser: payload => request({ table: 'auth', method: 'updateUser', payload }),
       onAuthStateChange(callback) { listener = callback; return { data: { subscription: { unsubscribe() {} } } } },
       signOut: () => request({ table: 'auth', method: 'logout' }),
       signInWithPassword: () => request({ table: 'auth', method: 'login' }),
@@ -120,11 +122,11 @@ function appHarness(storage = memoryStorage(), weekday = null) {
     storage: { from: () => ({ upload: path => request({ table: 'images', method: 'upload', path }), getPublicUrl: path => ({ data: { publicUrl: path } }) }) },
   }
   let source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8').replace(/^import .*\n/gm, '').replace('export default App', '')
-  source = source.replace('  if (!authReady ||', '  observe({ session, weeklyMeals, shoppingList, lockedDays, recipes, recipeName, ingredientRows, instructions, dietTags, selectedCategories, editingRecipeId, recipeUrl, imageUrl, imageFile, viewingRecipe, expandedRecipeId, swapOptions, pantryItems, checkedShoppingItems, onboardingAnswers, onboardingStep, searchTerm, pantrySearch, activeTab, selectedCategory, swipingDay, generateWeeklyMeals, regenerateMeal, cookTonight, getRecipes, addRecipe, importRecipeFromUrl, deleteRecipe, beginRecipeEdit, cancelRecipeEdit, recipeSaving, logout, recipeLoad, pantryLoad, checkedLoad, importing, changePantryItem, changeShoppingCheck, loadPantryItems, loadCheckedShoppingItems });\n  if (!authReady ||')
+  source = source.replace('  if (!authReady ||', '  observe({ session, weeklyMeals, shoppingList, lockedDays, recipes, recipeName, ingredientRows, instructions, dietTags, selectedCategories, editingRecipeId, recipeUrl, imageUrl, imageFile, viewingRecipe, expandedRecipeId, swapOptions, pantryItems, checkedShoppingItems, onboardingAnswers, onboardingStep, searchTerm, pantrySearch, activeTab, selectedCategory, swipingDay, generateWeeklyMeals, regenerateMeal, cookTonight, getRecipes, addRecipe, importRecipeFromUrl, deleteRecipe, beginRecipeEdit, cancelRecipeEdit, recipeSaving, logout, recipeLoad, pantryLoad, checkedLoad, importing, changePantryItem, changeShoppingCheck, loadPantryItems, loadCheckedShoppingItems, passwordSetupRequired, passwordSetupStatus, completePasswordSetup, newPassword, confirmPassword });\n  if (!authReady ||')
   const helpers = { ...account, ...shopping, ...ingredients, ...pantry }
   const code = transformSync('App.jsx', source, { jsx: { runtime: 'classic' } }).code
-  const App = new Function('React', 'useState', 'useRef', 'useEffect', 'useCallback', 'supabase', 'observe', 'window', 'alert', 'Date', ...Object.keys(helpers), code + '\nreturn App')(
-    React, React.useState, React.useRef, React.useEffect, React.useCallback, supabase, value => { snapshot = value }, { localStorage: storage, location: { reload() { reloads++ } }, confirm(message) { confirmations.push(message); return confirmResult } }, message => alerts.push(message), class extends Date { toLocaleDateString(...args) { return weekday || super.toLocaleDateString(...args) } }, ...Object.values(helpers))
+  const App = new Function('React', 'useState', 'useRef', 'useEffect', 'useCallback', 'initialAuthCallbackType', 'supabase', 'observe', 'window', 'alert', 'Date', ...Object.keys(helpers), code + '\nreturn App')(
+    React, React.useState, React.useRef, React.useEffect, React.useCallback, callbackType, supabase, value => { snapshot = value }, { localStorage: storage, location: { reload() { reloads++ } }, confirm(message) { confirmations.push(message); return confirmResult } }, message => alerts.push(message), class extends Date { toLocaleDateString(...args) { return weekday || super.toLocaleDateString(...args) } }, ...Object.values(helpers))
   function flush() {
     let iterations = 0
     while (dirty) {
@@ -147,15 +149,16 @@ function appHarness(storage = memoryStorage(), weekday = null) {
     }
   }
   async function pump() { await new Promise(resolve => setImmediate(resolve)); flush(); await new Promise(resolve => setImmediate(resolve)); flush() }
-  function emit(id, render = true) { listener('SIGNED_IN', id ? { user: { id }, token: Math.random() } : null); if (render) flush() }
+  function emitSession(event, nextSession, render = true) { listener(event, nextSession); if (render) flush() }
+  function emit(id, render = true, user = {}) { emitSession('SIGNED_IN', id ? { user: { id, ...user }, token: Math.random() } : null, render) }
   function nodes(value = tree, result = []) {
     if (Array.isArray(value)) value.forEach(item => nodes(item, result))
     else if (value && typeof value === 'object') { result.push(value); nodes(value.props?.children, result) }
     return result
   }
-  async function ready(id, library = [recipe(id === 'A' ? 87 : 88), recipe(57)], preferences = { household_size: 2 }, pantryNames = []) {
+  async function ready(id, library = [recipe(id === 'A' ? 87 : 88), recipe(57)], preferences = { household_size: 2 }, pantryNames = [], user = {}) {
     const start = requests.length
-    emit(id); await pump()
+    emit(id, true, user); await pump()
     const ownerRequests = requests.slice(start).filter(item => !item.settled && ['recipes', 'pantry_items', 'user_preferences', 'checked_shopping_items'].includes(item.table))
     for (const req of ownerRequests) {
       req.settled = true
@@ -164,7 +167,7 @@ function appHarness(storage = memoryStorage(), weekday = null) {
     await pump()
   }
   flush()
-  return { storage, requests, alerts, confirmations, scrollRequests, setConfirm(value) { confirmResult = value }, flush, pump, emit, ready, nodes, get state() { return snapshot }, get reloads() { return reloads } }
+  return { storage, requests, alerts, confirmations, scrollRequests, setConfirm(value) { confirmResult = value }, flush, pump, emit, emitSession, resolveInitialSession: initialSession.resolve, ready, nodes, get state() { return snapshot }, get reloads() { return reloads } }
 }
 
 test('actual App restores A/B independently, clears drafts/photos/checks, and preserves same-user refresh', async () => {
@@ -1690,4 +1693,164 @@ test('client import uses a longer bounded timeout and preserves the draft when t
   assert.equal(app.state.importing, false)
   assert.equal(app.nodes().find(node => node.type === 'fieldset').props.disabled, false)
   assert.equal(app.alerts.at(-1), 'Could not import that recipe.')
+})
+
+const invitedUser = { invited_at: '2026-10-01T00:00:00Z', user_metadata: { favorite_color: 'green' } }
+const passwordHeading = app => app.nodes().some(node => node.type === 'h1' && nodeText(node) === 'Set Your Password')
+function enterSetupPasswords(app, password = 'Beta-password-123', confirmation = password) {
+  app.nodes().find(node => node.props?.id === 'setup-password').props.onChange({ target: { value: password } })
+  app.nodes().find(node => node.props?.id === 'setup-confirm-password').props.onChange({ target: { value: confirmation } })
+  app.flush()
+}
+function submitSetupPassword(app) {
+  return app.nodes().find(node => node.type === 'form').props.onSubmit({ preventDefault() {} })
+}
+const completedInvite = id => ({ id, ...invitedUser, user_metadata: { ...invitedUser.user_metadata, password_setup_complete: true } })
+
+test('invited users see password setup before preference loading or onboarding, including after refresh', async () => {
+  const app = appHarness()
+  app.emit('A', true, invitedUser)
+  assert.equal(passwordHeading(app), true, 'gate renders on the first authenticated render')
+  assert.equal(app.nodes().some(node => node.type === 'button' && nodeText(node).includes('Continue')), false)
+  await app.pump()
+  for (const req of app.requests.filter(req => ['recipes', 'pantry_items', 'checked_shopping_items', 'user_preferences'].includes(req.table))) {
+    req.resolve({ data: req.table === 'user_preferences' ? null : [], error: null })
+  }
+  await app.pump()
+  assert.equal(app.state.onboardingStep, 1)
+  assert.equal(passwordHeading(app), true)
+  const reloaded = appHarness(app.storage)
+  await reloaded.ready('A', [], null, [], invitedUser)
+  assert.equal(passwordHeading(reloaded), true, 'URL intent or browser-local completion is not needed to enforce the gate')
+})
+
+test('invalid/mismatched passwords show inline errors without writes or clearing the gate', async () => {
+  const app = appHarness(); await app.ready('A', [], null, [], invitedUser)
+  for (const [password, confirmation, message] of [['short', 'short', 'at least 8'], ['', '', 'at least 8'], ['Beta-password-123', 'Different-password', 'do not match']]) {
+    enterSetupPasswords(app, password, confirmation)
+    await submitSetupPassword(app); await app.pump()
+    assert.equal(passwordHeading(app), true)
+    assert.ok(app.nodes().some(node => node.props?.role === 'alert' && nodeText(node).includes(message)))
+  }
+  assert.equal(app.requests.some(req => req.method === 'updateUser'), false)
+})
+
+test('password update failures preserve fields and the gate, unlock retry, and never advance onboarding', async () => {
+  for (const rejection of [false, true]) {
+    const app = appHarness(); await app.ready('A', [], null, [], invitedUser)
+    enterSetupPasswords(app)
+    const saving = submitSetupPassword(app); await app.pump()
+    const request = latestRequest(app, 'auth', 'updateUser')
+    if (rejection) request.reject(new Error('Network unavailable'))
+    else request.resolve({ data: { user: null }, error: { message: 'Password does not meet the project password policy.' } })
+    await saving; await app.pump()
+    assert.equal(passwordHeading(app), true)
+    assert.equal(app.state.newPassword, 'Beta-password-123')
+    assert.equal(app.state.confirmPassword, 'Beta-password-123')
+    assert.equal(app.state.onboardingStep, 1)
+    assert.equal(app.nodes().find(node => node.type === 'button' && nodeText(node) === 'Set Password').props.disabled, false)
+    assert.ok(app.nodes().some(node => node.props?.role === 'alert'))
+  }
+})
+
+test('successful password setup atomically submits password/marker, blocks overlaps, and continues to onboarding', async () => {
+  const app = appHarness(); await app.ready('A', [], null, [], invitedUser); enterSetupPasswords(app)
+  const saving = submitSetupPassword(app)
+  await app.state.completePasswordSetup(); await app.pump()
+  assert.equal(app.requests.filter(req => req.method === 'updateUser').length, 1)
+  assert.equal(app.nodes().find(node => node.type === 'button' && nodeText(node) === 'Saving...').props.disabled, true)
+  assert.ok(nodeText(app.nodes()).includes('Saving your password…'))
+  const request = latestRequest(app, 'auth', 'updateUser')
+  assert.deepEqual(request.payload, { password: 'Beta-password-123', data: { password_setup_complete: true } })
+  // Supabase emits USER_UPDATED before resolving updateUser; that event alone must not open the gate.
+  app.emitSession('USER_UPDATED', { user: completedInvite('A') })
+  assert.equal(passwordHeading(app), true)
+  request.resolve({ data: { user: completedInvite('A') }, error: null }); await saving; await app.pump()
+  assert.equal(passwordHeading(app), false)
+  assert.equal(app.state.passwordSetupRequired, false)
+  assert.equal(app.state.onboardingStep, 1)
+  assert.equal(app.state.newPassword, '')
+  assert.equal(app.state.confirmPassword, '')
+  assert.equal(app.state.session.user.user_metadata.favorite_color, 'green')
+  const refreshed = appHarness(app.storage)
+  await refreshed.ready('A', [], null, [], completedInvite('A'))
+  assert.equal(passwordHeading(refreshed), false)
+})
+
+test('ordinary login and completed invited users are not forced through password setup', async () => {
+  for (const user of [{}, completedInvite('A')]) {
+    const app = appHarness(); await app.ready('A', [], {}, [], user)
+    assert.equal(passwordHeading(app), false)
+    assert.equal(app.state.passwordSetupRequired, false)
+    app.emitSession('TOKEN_REFRESHED', { user: { id: 'A', ...user } })
+    assert.equal(passwordHeading(app), false)
+  }
+})
+
+test('PASSWORD_RECOVERY opens setup even with a completion marker; normal refresh events cannot dismiss it', async () => {
+  const app = appHarness(); await app.ready('A', [], {}, [], completedInvite('A'))
+  app.emitSession('PASSWORD_RECOVERY', { user: completedInvite('A') })
+  assert.equal(passwordHeading(app), true)
+  app.emitSession('SIGNED_IN', { user: completedInvite('A') })
+  app.emitSession('TOKEN_REFRESHED', { user: completedInvite('A') })
+  assert.equal(passwordHeading(app), true)
+  enterSetupPasswords(app)
+  const saving = submitSetupPassword(app); await app.pump()
+  latestRequest(app, 'auth', 'updateUser').resolve({ data: { user: completedInvite('A') }, error: null })
+  await saving; await app.pump()
+  assert.equal(passwordHeading(app), false)
+  assert.equal(app.state.onboardingStep, 0)
+})
+
+test('captured recovery/invite intent gates a restored initial session before onboarding', async () => {
+  for (const callbackType of ['invite', 'recovery']) {
+    const app = appHarness(memoryStorage(), null, callbackType)
+    app.resolveInitialSession({ data: { session: { user: { id: 'A' } } }, error: null })
+    await app.pump()
+    assert.equal(passwordHeading(app), true)
+  }
+})
+
+test('stale password success/error and auth update events cannot change another account', async () => {
+  for (const fails of [false, true]) {
+    const app = appHarness(); await app.ready('A', [], null, [], invitedUser); enterSetupPasswords(app)
+    const saving = submitSetupPassword(app); await app.pump()
+    const request = latestRequest(app, 'auth', 'updateUser')
+    await app.ready('B')
+    const before = structuredClone({ session: app.state.session, meals: app.state.weeklyMeals, onboarding: app.state.onboardingStep })
+    app.emitSession('USER_UPDATED', { user: completedInvite('A') })
+    app.emitSession('TOKEN_REFRESHED', { user: completedInvite('A') })
+    request.resolve(fails ? { data: { user: null }, error: { message: 'A error' } } : { data: { user: completedInvite('A') }, error: null })
+    await saving; await app.pump()
+    assert.deepEqual({ session: app.state.session, meals: app.state.weeklyMeals, onboarding: app.state.onboardingStep }, before)
+    assert.equal(passwordHeading(app), false)
+    assert.equal(app.state.passwordSetupStatus, null)
+    assert.equal(app.state.newPassword, '')
+  }
+})
+
+test('late initial-session restoration cannot replace a newer signed-in account or gate it', async () => {
+  const app = appHarness(); await app.ready('B')
+  app.resolveInitialSession({ data: { session: { user: { id: 'A', ...invitedUser } } }, error: null })
+  await app.pump()
+  assert.equal(app.state.session.user.id, 'B')
+  assert.equal(passwordHeading(app), false)
+})
+
+test('callback intent is captured before SDK initialization without retaining invitation/recovery tokens', () => {
+  const source = readFileSync(new URL('../src/supabase.js', import.meta.url), 'utf8').replace(/^import .*\n/gm, '').replaceAll('export const ', 'const ')
+  for (const type of ['invite', 'recovery', 'signup']) {
+    const fakeWindow = { location: { hash: `#access_token=DO_NOT_RETAIN&refresh_token=DO_NOT_RETAIN&type=${type}`, search: '' } }
+    const result = new Function('createClient', 'window', source + '\nreturn { initialAuthCallbackType }')(
+      () => { fakeWindow.location.hash = ''; return {} }, fakeWindow)
+    assert.deepEqual(result, { initialAuthCallbackType: type === 'signup' ? null : type })
+    assert.equal(JSON.stringify(result).includes('DO_NOT_RETAIN'), false)
+  }
+})
+
+test('an unsuccessful callback with no session cannot force a later ordinary login through setup', async () => {
+  const app = appHarness(memoryStorage(), null, 'recovery')
+  app.resolveInitialSession({ data: { session: null }, error: null }); await app.pump()
+  await app.ready('A')
+  assert.equal(passwordHeading(app), false)
 })
