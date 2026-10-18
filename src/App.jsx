@@ -21,6 +21,17 @@ function getRequiredAllergyTags(allergies = []) {
   return getAllergyValues(allergies).filter((tag) => allergySafeTags.includes(tag))
 }
 
+const softPlanningTags = ["High Protein", "Anti-Inflammatory", "Low Carb", "Keto", "Mediterranean"]
+
+function isPlanningEligible(recipe, preferences, userId) {
+  const tags = recipe.diet_tags || []
+  const isOwned = Boolean(userId) && recipe.user_id === userId
+  return getRequiredAllergyTags(preferences.allergies).every(tag => tags.includes(tag)) &&
+    (preferences.dietPreferences || []).every(tag =>
+      (isOwned && softPlanningTags.includes(tag)) || tags.includes(tag)
+    )
+}
+
 function plannerStorage() {
   try { return window.localStorage } catch { return null }
 }
@@ -496,7 +507,10 @@ async function deleteRecipe(id) {
   if (!owner?.userId || !ownsAccount(owner) || recipeSaveOperation.current) return
   const recipe = recipes.find(item => item.id === id && item.user_id === owner.userId)
   if (!recipe) return
-  if (!window.confirm(`Delete "${recipe.name}"? This cannot be undone.`)) return
+  const scheduledDays = weeklyMealsRef.current.filter(item => item.meal?.id === id).map(item => item.day)
+  const confirmation = `Delete "${recipe.name}"? This cannot be undone.${scheduledDays.length
+    ? ` This will also remove it from your plan for ${scheduledDays.join(", ")} and unlock those days.` : ""}`
+  if (!window.confirm(confirmation)) return
   const generation = recipeDraftGeneration.current
   try {
     const { data, error } = await supabase.from('recipes').delete().eq('id', id).eq('user_id', owner.userId).select("id")
@@ -504,6 +518,20 @@ async function deleteRecipe(id) {
     if (error) throw error
     if (!data?.some(item => item.id === id)) throw new Error("Recipe was not deleted. It may no longer be available to delete.")
     setRecipes(current => current.filter(item => item.id !== id))
+    // Read the latest plan at completion, not the snapshot from the Delete click.
+    const previousMeals = weeklyMealsRef.current
+    const affectedDays = previousMeals.filter(item => item.meal?.id === id).map(item => item.day)
+    if (affectedDays.length) {
+      const updatedMeals = previousMeals.map(item => item.meal?.id === id ? { ...item, meal: null } : item)
+      weeklyMealsRef.current = updatedMeals
+      setWeeklyMeals(updatedMeals)
+      setLockedDays(current => current.filter(day => !affectedDays.includes(day)))
+      setShoppingList(previous => ownsAccount(owner)
+        ? rebuildShoppingList(previous, previousMeals, updatedMeals, pantrySnapshotRef.current.items) : previous)
+      setPlanFeedback(`"${recipe.name}" was removed from ${affectedDays.join(", ")}. Those days are now empty and unlocked.`)
+    }
+    setViewingRecipe(current => current?.id === id ? null : current)
+    setExpandedRecipeId(current => current === id ? null : current)
     if (editingRecipeId === id && recipeDraftGeneration.current === generation) resetRecipeDraft()
   } catch (error) {
     if (!ownsAccount(owner)) return
@@ -532,8 +560,6 @@ function toggleDayLock(day) {
     let assignedMeals = 0
     let preservedLockedDays = 0
     let unfilledSelections = 0
-    const preferredDietTags = onboardingAnswers.dietPreferences || []
-    const requiredAllergyTags = getRequiredAllergyTags(onboardingAnswers.allergies)
 
     const meals = daysOfWeek.map((day) => {
 
@@ -549,18 +575,7 @@ function toggleDayLock(day) {
   const availableRecipes = recipes.filter(
   (recipe) => !usedRecipeIds.has(recipe.id)
 )
-const allergySafeRecipes = availableRecipes.filter((recipe) =>
-  requiredAllergyTags.every((tag) =>
-    (recipe.diet_tags || []).includes(tag)
-  )
-)
-
-const matchingRecipes = allergySafeRecipes.filter((recipe) =>
-  preferredDietTags.every((tag) =>
-    (recipe.diet_tags || []).includes(tag)
-  )
-)
-
+const matchingRecipes = availableRecipes.filter(meetsPlanningPreferences)
 
 const recipePool = matchingRecipes
 if (recipePool.length === 0) {
@@ -665,21 +680,7 @@ const options = recipes
     )
 
     if (availableRecipes.length === 0) return item
-const preferredDietTags = onboardingAnswers.dietPreferences || []
-
-const requiredAllergyTags = getRequiredAllergyTags(onboardingAnswers.allergies)
-
-const allergySafeRecipes = availableRecipes.filter((recipe) =>
-  requiredAllergyTags.every((tag) =>
-    (recipe.diet_tags || []).includes(tag)
-  )
-)
-
-const matchingRecipes = allergySafeRecipes.filter((recipe) =>
-  preferredDietTags.every((tag) =>
-    (recipe.diet_tags || []).includes(tag)
-  )
-)
+const matchingRecipes = availableRecipes.filter(meetsPlanningPreferences)
 
 const recipePool = matchingRecipes
 if (recipePool.length === 0) return item
@@ -704,9 +705,7 @@ if (recipePool.length === 0) return item
   createShoppingList(updatedMeals)
 }
 function meetsPlanningPreferences(recipe) {
-  const tags = recipe.diet_tags || []
-  return getRequiredAllergyTags(onboardingAnswers.allergies).every(tag => tags.includes(tag)) &&
-    (onboardingAnswers.dietPreferences || []).every(tag => tags.includes(tag))
+  return isPlanningEligible(recipe, onboardingAnswers, userId)
 }
 function cookTonight(recipe) {
   if (!recipe) return
@@ -1417,6 +1416,7 @@ if (!saved || !ownsAccount(owner)) return
   </div>
   <div className="recipe-field recipe-dietary-tags">
   <label>Dietary tags</label>
+  <p className="helper-text">Lifestyle tags are optional for your recipes. Add matching tags for any selected dietary requirements or food restrictions so they can be included in meal plans.</p>
   <button
   type="button"
   className={dietTags.includes("High Protein") ? "diet-option selected" : "diet-option"}

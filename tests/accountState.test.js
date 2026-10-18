@@ -471,10 +471,10 @@ test('Generate and Regenerate enforce each recognized restriction and preserve l
   }
 })
 
-test('both generation paths require every restriction together with every dietary preference', async () => {
+test('both generation paths require every restriction together with every dietary preference for shared recipes', async () => {
   const tags = ['Peanut-Free', 'Soy-Free', 'Vegan', 'High Protein']
-  const library = tags.map((_, index) => ({ ...recipe(index + 1), diet_tags: tags.filter((_, at) => at !== index) }))
-  const safe = { ...recipe(9), diet_tags: tags }
+  const library = tags.map((_, index) => ({ ...recipe(index + 1), user_id: null, diet_tags: tags.filter((_, at) => at !== index) }))
+  const safe = { ...recipe(9), user_id: null, diet_tags: tags }
   const storage = memoryStorage(), owner = { userId: 'A', generation: 1 }
   account.persistPlannerCache(storage, owner, owner, {
     weeklyMeals: [{ day: 'Monday', meal: library[0] }], shoppingList: {}, lockedDays: []
@@ -665,11 +665,11 @@ test('Best Match uses conservative names and supported aliases without changing 
   assert.equal(belowHalf.nodes().some(node => node.props?.className === 'pantry-match-card'), false)
 })
 
-test('Best Match combines every diet and restriction tag for shared and personal recipes', async () => {
+test('Best Match requires hard tags for everyone and soft tags for shared recipes', async () => {
   const tags = ['Vegan', 'High Protein', 'Peanut-Free', 'Dairy-Free']
   const preferences = { diet_preferences: tags.slice(0, 2), allergies: [...tags.slice(2), 'sesame'] }
   for (const user_id of [null, 'A']) {
-    const incomplete = tags.map((_, at) => ({ ...bestRecipe(at + 1, `Missing tag ${at}`, ['Eggs'], tags.filter((_, index) => index !== at)), user_id }))
+    const incomplete = tags.map((_, at) => ({ ...bestRecipe(at + 1, `Missing tag ${at}`, ['Eggs'], tags.filter((_, index) => index !== at)), user_id })).filter((_, at) => user_id !== 'A' || tags[at] !== 'High Protein')
     const valid = { ...bestRecipe(9, 'Eligible meal', ['Eggs'], tags), user_id }
     const app = await bestApp({ library: [...incomplete, valid], preferences, pantryNames: ['Eggs'] })
     assert.equal(app.nodes(bestCard(app)).find(node => node.type === 'h3').props.children[0], 'Eligible meal')
@@ -1315,5 +1315,197 @@ test('every refused Cook Tonight guard preserves the plan, shopping, locks, cach
     assert.equal(shortageText(app), feedback, reason)
     if (reason !== 'no recipe') assert.ok(app.alerts.length > 0, reason)
     assertPlannerCacheMatches(app)
+  }
+})
+
+const deletionFixture = (id, name, rows) => ({ ...editFixture(id, name), structured_ingredients: rows })
+function deletionSnapshot(app) {
+  return structuredClone({ recipes: app.state.recipes, meals: app.state.weeklyMeals, shopping: app.state.shoppingList,
+    locks: app.state.lockedDays, checks: app.state.checkedShoppingItems, viewing: app.state.viewingRecipe,
+    expanded: app.state.expandedRecipeId, feedback: shortageText(app), cache: app.storage.getItem(account.plannerCacheKey(app.state.session.user.id)) })
+}
+async function resolveDeletion(app, deleting, id, error = null, returned = [{ id }]) {
+  app.requests.filter(req => req.table === 'recipes' && req.method === 'delete' && req.constraints.id === id).at(-1).resolve({ data: returned, error })
+  await deleting; await app.pump()
+}
+async function checkShoppingLabel(app, text) {
+  const row = app.nodes().find(node => node.props?.className === 'shopping-item' && nodeText(node).includes(text))
+  assert.ok(row, text)
+  const checking = app.nodes(row).find(node => node.props?.type === 'checkbox').props.onChange({ target: { checked: true } })
+  await app.pump()
+  app.requests.filter(req => req.table === 'checked_shopping_items' && req.method === 'insert').at(-1).resolve({ error: null })
+  await checking; await app.pump()
+}
+
+test('successful deletion cleans one/multiple assignments and locks, recalculates shared ingredients, and persists without resurrection', async () => {
+  for (const days of [['Monday'], ['Monday', 'Tuesday']]) {
+    const removed = deletionFixture(101, 'Delete rice recipe', [{ amount: '1', unit: 'cup', ingredient: 'Rice' }, { amount: '1', unit: 'tsp', ingredient: 'Salt' }])
+    const remaining = deletionFixture(102, 'Keep rice recipe', [{ amount: '2', unit: 'cup', ingredient: 'Rice' }, { amount: '1', unit: 'tbsp', ingredient: 'Oil' }])
+    const app = await bestApp({ library: [removed, remaining], pantryNames: ['Salt'],
+      meals: [...days.map(day => ({ day, meal: removed })), { day: 'Thursday', meal: remaining }], locks: ['Monday', 'Thursday'],
+      shoppingList: { Other: [{ key: 'paper towels', label: 'paper towels', extra: true }] } })
+    clickButton(app, '🛒 Shop'); await checkShoppingLabel(app, '1 tbsp oil'); await checkShoppingLabel(app, 'paper towels')
+    const checks = [...app.state.checkedShoppingItems]
+    const preserved = structuredClone(app.state.weeklyMeals.find(item => item.day === 'Thursday'))
+    clickButton(app, '🍽 Plan')
+    app.state.regenerateMeal('Monday'); app.flush()
+    assert.ok(shortageText(app).includes('Monday is locked.'))
+    clickButton(app, '📖 Recipes')
+    const card = app.nodes().find(node => node.props?.className === 'recipe-card' && nodeText(node).includes(removed.name))
+    app.nodes(card).find(node => node.type === 'button' && nodeText(node) === 'View Recipe').props.onClick(); app.flush()
+    const deleting = app.state.deleteRecipe(101); await app.pump()
+    assert.ok(app.confirmations.at(-1).includes(`your plan for ${days.join(', ')}`))
+    clickButton(app, '🍽 Plan'); clickButton(app, removed.name)
+    assert.equal(app.state.viewingRecipe.id, 101)
+    await resolveDeletion(app, deleting, 101)
+    for (const day of days) assert.equal(app.state.weeklyMeals.find(item => item.day === day).meal, null)
+    assert.deepEqual(app.state.weeklyMeals.find(item => item.day === 'Thursday'), preserved)
+    assert.deepEqual(app.state.lockedDays, ['Thursday'])
+    assert.deepEqual(app.state.recipes.map(item => item.id), [102])
+    assert.equal(app.state.viewingRecipe, null)
+    assert.equal(app.state.expandedRecipeId, null)
+    assert.equal(detailModals(app).length, 0)
+    assert.ok(shortageText(app).includes('was removed from'))
+    assert.equal(shortageText(app).includes('Monday is locked.'), false)
+    const visible = Object.values(app.state.shoppingList).flat().filter(item => !item.pantryHidden)
+    assert.deepEqual(visible.map(item => item.label).sort(), ['2 cup rice', '1 tbsp oil', 'paper towels'].sort())
+    assert.deepEqual(app.state.checkedShoppingItems, checks)
+    assert.equal(shopping.isShoppingItemChecked(visible.find(item => item.label === '1 tbsp oil'), checks), true)
+    assert.equal(shopping.isShoppingItemChecked(visible.find(item => item.label === 'paper towels'), checks), true)
+    assertPlannerCacheMatches(app)
+    const reloaded = appHarness(app.storage); await reloaded.ready('A', [remaining], {}, ['Salt'])
+    assert.equal(reloaded.state.weeklyMeals.some(item => item.meal?.id === 101), false)
+    assert.deepEqual(reloaded.state.lockedDays, ['Thursday'])
+    assertPlannerCacheMatches(reloaded)
+  }
+})
+
+test('deletion cancellation, errors and zero-row responses leave all recipe/planner/shopping/detail/cache state untouched', async () => {
+  for (const outcome of ['cancel', 'error', 'zero rows']) {
+    const removed = editFixture(101)
+    const app = await bestApp({ library: [removed], meals: [{ day: 'Monday', meal: removed }], locks: ['Monday'] })
+    clickButton(app, removed.name)
+    app.state.regenerateMeal('Monday'); app.flush()
+    const before = deletionSnapshot(app)
+    if (outcome === 'cancel') app.setConfirm(false)
+    const deleting = app.state.deleteRecipe(101); await app.pump()
+    if (outcome === 'cancel') {
+      await deleting; assert.equal(app.requests.some(req => req.method === 'delete'), false)
+    } else await resolveDeletion(app, deleting, 101, outcome === 'error' ? { message: 'Delete denied' } : null, [])
+    assert.deepEqual(deletionSnapshot(app), before, outcome)
+    if (outcome !== 'cancel') assert.ok(app.alerts.length > 0)
+  }
+})
+
+test('delayed deletion success cleans current assignments only, preserving newer Cook Tonight edits, locks and shopping extras', async () => {
+  const removed = bestRecipe(101, 'Delete rice', ['Rice'])
+  const remaining = bestRecipe(102, 'Keep milk', ['Milk'])
+  const replacement = bestRecipe(103, 'New eggs', ['Eggs'])
+  const closeMatch = bestRecipe(104, 'Egg bread', ['Eggs', 'Bread'])
+  const app = await bestApp({ library: [removed, remaining, replacement, closeMatch], pantryNames: ['Eggs'],
+    meals: [{ day: 'Monday', meal: removed }, { day: 'Tuesday', meal: remaining }, { day: 'Thursday', meal: removed }], locks: ['Monday', 'Tuesday'] })
+  const deleting = app.state.deleteRecipe(101); await app.pump()
+  assert.ok(app.confirmations.at(-1).includes('Monday, Thursday'))
+  bestButton(app, 'Cook Tonight').props.onClick(); app.flush()
+  assert.equal(app.state.weeklyMeals.find(item => item.day === 'Thursday').meal.id, 103)
+  const thursdayCard = app.nodes().find(node => node.props?.className?.startsWith('meal-card') && nodeText(node).includes('Thursday'))
+  app.nodes(thursdayCard).find(node => node.type === 'button' && nodeText(node) === 'Lock').props.onClick(); app.flush()
+  clickButton(app, '🥫 Pantry')
+  const card = app.nodes().find(node => node.props?.className === 'pantry-match-card' && nodeText(node).includes('Egg bread'))
+  app.nodes(card).find(node => node.type === 'button').props.onClick({ stopPropagation() {} }); app.flush()
+  await resolveDeletion(app, deleting, 101)
+  assert.equal(app.state.weeklyMeals.find(item => item.day === 'Monday').meal, null)
+  assert.equal(app.state.weeklyMeals.find(item => item.day === 'Tuesday').meal.id, 102)
+  assert.equal(app.state.weeklyMeals.find(item => item.day === 'Thursday').meal.id, 103)
+  assert.deepEqual([...app.state.lockedDays].sort(), ['Tuesday', 'Thursday'].sort())
+  const visible = Object.values(app.state.shoppingList).flat().filter(item => !item.pantryHidden)
+  assert.ok(visible.some(item => item.label === 'Bread' && item.extra))
+  assert.equal(visible.some(item => item.label.toLowerCase().includes('rice')), false)
+  assert.equal(visible.some(item => item.label.toLowerCase().includes('eggs')), false)
+  assert.ok(visible.some(item => item.label.toLowerCase().includes('milk')))
+  assertPlannerCacheMatches(app)
+})
+
+test('stale-account successful deletion cannot clean the current account planner or cache', async () => {
+  const removed = editFixture(101)
+  const app = await bestApp({ library: [removed], meals: [{ day: 'Monday', meal: removed }], locks: ['Monday'] })
+  const deleting = app.state.deleteRecipe(101); await app.pump()
+  const bOwner = { userId: 'B', generation: 1 }
+  account.persistPlannerCache(app.storage, bOwner, bOwner, { weeklyMeals: [{ day: 'Monday', meal: { ...removed, user_id: 'B' } }], shoppingList: {}, lockedDays: ['Monday'] })
+  await app.ready('B', [{ ...removed, user_id: 'B' }])
+  const before = deletionSnapshot(app)
+  await resolveDeletion(app, deleting, 101)
+  assert.deepEqual(deletionSnapshot(app), before)
+})
+
+test('two delayed successful deletions reconcile from the latest plan without resurrecting either recipe', async () => {
+  const a = editFixture(101), b = editFixture(102)
+  const app = await bestApp({ library: [a,b], meals: [{ day: 'Monday', meal: a }, { day: 'Tuesday', meal: b }], locks: ['Monday', 'Tuesday'] })
+  const first = app.state.deleteRecipe(101), second = app.state.deleteRecipe(102); await app.pump()
+  for (const req of app.requests.filter(req => req.method === 'delete')) req.resolve({ data: [{ id: req.constraints.id }], error: null })
+  await Promise.all([first, second]); await app.pump()
+  assert.deepEqual(app.state.weeklyMeals.map(item => item.meal), [null, null])
+  assert.deepEqual(app.state.lockedDays, [])
+  assert.deepEqual(app.state.recipes, [])
+  assert.equal(Object.values(app.state.shoppingList).flat().filter(item => !item.pantryHidden).length, 0)
+  assertPlannerCacheMatches(app)
+})
+
+async function assertEligibilityAcrossPlanningPaths(candidate, preferences, eligible) {
+  const old = bestRecipe(800, 'Existing meal', ['Rice'])
+  const app = await bestApp({ library: [old, candidate], preferences,
+    meals: [{ day: 'Thursday', meal: old }], pantryNames: ['Eggs'] })
+  assert.equal(Boolean(bestButton(app, 'Cook Tonight')), eligible, 'Best Match eligibility')
+  app.state.cookTonight(candidate); app.flush()
+  assert.equal(app.state.weeklyMeals[0].meal.id, eligible ? candidate.id : old.id, 'Cook Tonight guard')
+  const cached = account.loadPlannerCache(app.storage, 'A')
+  assert.deepEqual(cached.weeklyMeals, app.state.weeklyMeals)
+  assert.deepEqual(cached.shoppingList, app.state.shoppingList)
+
+  const swap = await bestApp({ library: [old, candidate], preferences,
+    meals: [{ day: 'Thursday', meal: old }], pantryNames: ['Eggs'] })
+  swap.state.regenerateMeal('Thursday'); swap.flush()
+  assert.equal(swap.state.weeklyMeals[0].meal.id, eligible ? candidate.id : old.id, 'Regenerate eligibility')
+  swap.state.generateWeeklyMeals(); swap.flush()
+  assert.equal(swap.state.weeklyMeals.some(item => item.meal?.id === candidate.id), eligible, 'Generate eligibility')
+  const generatedCache = account.loadPlannerCache(swap.storage, 'A')
+  assert.deepEqual(generatedCache.weeklyMeals, swap.state.weeklyMeals)
+  assert.deepEqual(generatedCache.shoppingList, swap.state.shoppingList)
+}
+
+test('owned recipes may omit each soft lifestyle tag across all four planning paths', async () => {
+  const candidate = { ...bestRecipe(801, 'Personal supper', ['Eggs']), user_id: 'A' }
+  for (const diet_preferences of [[], ['High Protein'], ['Anti-Inflammatory'], ['Low Carb'], ['Keto'], ['Mediterranean'], ['High Protein', 'Mediterranean']]) {
+    await assertEligibilityAcrossPlanningPaths(candidate, { diet_preferences }, true)
+  }
+})
+
+test('hard dietary requirements and every restriction remain mandatory for owned and shared recipes', async () => {
+  for (const user_id of ['A', null]) {
+    for (const tag of ['Vegetarian', 'Vegan', ...supportedRestrictions]) {
+      const candidate = { ...bestRecipe(801, 'Compatible supper', ['Eggs']), user_id }
+      // Dietary requirements stay hard even when Gluten-Free is selected here.
+      await assertEligibilityAcrossPlanningPaths(candidate, { diet_preferences: [tag] }, false)
+      await assertEligibilityAcrossPlanningPaths({ ...candidate, diet_tags: [tag] }, { diet_preferences: [tag] }, true)
+      if (supportedRestrictions.includes(tag)) {
+        await assertEligibilityAcrossPlanningPaths(candidate, { allergies: [tag] }, false)
+        await assertEligibilityAcrossPlanningPaths({ ...candidate, diet_tags: [tag] }, { allergies: [tag] }, true)
+      }
+    }
+  }
+})
+
+test('shared recipes still require soft tags while personal recipes still require all combined hard tags', async () => {
+  for (const tag of ['High Protein', 'Anti-Inflammatory', 'Low Carb', 'Keto', 'Mediterranean']) {
+    const candidate = { ...bestRecipe(801, 'Shared supper', ['Eggs']), user_id: null }
+    await assertEligibilityAcrossPlanningPaths(candidate, { diet_preferences: [tag] }, false)
+    await assertEligibilityAcrossPlanningPaths({ ...candidate, diet_tags: [tag] }, { diet_preferences: [tag] }, true)
+  }
+  const hard = ['Vegan', 'Gluten-Free', 'Dairy-Free', 'Peanut-Free']
+  const preferences = { diet_preferences: ['High Protein', 'Vegan', 'Gluten-Free'], allergies: ['Dairy-Free', 'Peanut-Free'] }
+  const candidate = { ...bestRecipe(801, 'Personal supper', ['Eggs'], hard), user_id: 'A' }
+  await assertEligibilityAcrossPlanningPaths(candidate, preferences, true)
+  for (const missing of hard) {
+    await assertEligibilityAcrossPlanningPaths({ ...candidate, diet_tags: hard.filter(tag => tag !== missing) }, preferences, false)
   }
 })
