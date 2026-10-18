@@ -1339,10 +1339,8 @@ if (!saved || !ownsAccount(owner)) return
         "Seafood",
         "Pasta",
         "Crockpot",
-        "Breakfast",
         "Vegetarian",
         "Soup",
-        "Dessert",
       ].map((cat) => (
         <label
           key={cat}
