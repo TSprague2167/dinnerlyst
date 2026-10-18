@@ -14,9 +14,9 @@ function memoryStorage() {
   return { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) }
 }
 function deferred() {
-  let resolve
-  const promise = new Promise(done => { resolve = done })
-  return { promise, resolve }
+  let resolve, reject
+  const promise = new Promise((done, fail) => { resolve = done; reject = fail })
+  return { promise, resolve, reject }
 }
 
 test('scoped cache restores each owner independently and survives logout', () => {
@@ -120,7 +120,7 @@ function appHarness(storage = memoryStorage(), weekday = null) {
     storage: { from: () => ({ upload: path => request({ table: 'images', method: 'upload', path }), getPublicUrl: path => ({ data: { publicUrl: path } }) }) },
   }
   let source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8').replace(/^import .*\n/gm, '').replace('export default App', '')
-  source = source.replace('  if (!authReady ||', '  observe({ session, weeklyMeals, shoppingList, lockedDays, recipes, recipeName, ingredientRows, instructions, dietTags, selectedCategories, editingRecipeId, recipeUrl, imageUrl, imageFile, viewingRecipe, expandedRecipeId, swapOptions, pantryItems, checkedShoppingItems, onboardingAnswers, onboardingStep, searchTerm, pantrySearch, activeTab, selectedCategory, swipingDay, generateWeeklyMeals, regenerateMeal, cookTonight, getRecipes, addRecipe, importRecipeFromUrl, deleteRecipe, beginRecipeEdit, cancelRecipeEdit, recipeSaving, logout });\n  if (!authReady ||')
+  source = source.replace('  if (!authReady ||', '  observe({ session, weeklyMeals, shoppingList, lockedDays, recipes, recipeName, ingredientRows, instructions, dietTags, selectedCategories, editingRecipeId, recipeUrl, imageUrl, imageFile, viewingRecipe, expandedRecipeId, swapOptions, pantryItems, checkedShoppingItems, onboardingAnswers, onboardingStep, searchTerm, pantrySearch, activeTab, selectedCategory, swipingDay, generateWeeklyMeals, regenerateMeal, cookTonight, getRecipes, addRecipe, importRecipeFromUrl, deleteRecipe, beginRecipeEdit, cancelRecipeEdit, recipeSaving, logout, recipeLoad, pantryLoad, checkedLoad, importing, changePantryItem, changeShoppingCheck, loadPantryItems, loadCheckedShoppingItems });\n  if (!authReady ||')
   const helpers = { ...account, ...shopping, ...ingredients, ...pantry }
   const code = transformSync('App.jsx', source, { jsx: { runtime: 'classic' } }).code
   const App = new Function('React', 'useState', 'useRef', 'useEffect', 'useCallback', 'supabase', 'observe', 'window', 'alert', 'Date', ...Object.keys(helpers), code + '\nreturn App')(
@@ -1508,4 +1508,170 @@ test('shared recipes still require soft tags while personal recipes still requir
   for (const missing of hard) {
     await assertEligibilityAcrossPlanningPaths({ ...candidate, diet_tags: hard.filter(tag => tag !== missing) }, preferences, false)
   }
+})
+
+const latestRequest = (app, table, method = 'select') => app.requests.filter(req => req.table === table && req.method === method).at(-1)
+async function failedInitialLoads(tables) {
+  const app = appHarness(); app.emit('A'); await app.pump()
+  for (const req of app.requests.filter(req => ['recipes', 'pantry_items', 'checked_shopping_items', 'user_preferences'].includes(req.table))) {
+    req.resolve(tables.includes(req.table) ? { data: null, error: { message: 'Offline' } } :
+      { data: req.table === 'user_preferences' ? { household_size: 2 } : [], error: null })
+  }
+  await app.pump()
+  return app
+}
+
+test('recipe loading failure is not an empty library; Retry distinguishes a genuinely empty response', async () => {
+  const app = await failedInitialLoads(['recipes'])
+  clickButton(app, '📖 Recipes')
+  assert.ok(nodeText(app.nodes()).includes('Could not load recipes'))
+  assert.equal(nodeText(app.nodes()).includes('No recipes yet.'), false)
+  assert.equal(nodeText(app.nodes()).includes('No recipes found.'), false)
+  clickButton(app, 'Retry loading recipes'); await app.pump()
+  assert.ok(nodeText(app.nodes()).includes('Loading recipes…'))
+  latestRequest(app, 'recipes').resolve({ data: [], error: null }); await app.pump()
+  assert.ok(nodeText(app.nodes()).includes('No recipes yet.'))
+  assert.equal(nodeText(app.nodes()).includes('Could not load recipes'), false)
+})
+
+test('failed recipe refresh retains the library and a confirmed save is not reported as failed', async () => {
+  const app = appHarness(); await app.ready('A', [editFixture(101)])
+  clickButton(app, '📖 Recipes'); app.state.beginRecipeEdit(app.state.recipes[0]); app.flush()
+  const saving = app.state.addRecipe(); await app.pump()
+  latestRequest(app, 'recipes', 'update').resolve({ data: [editFixture(101)], error: null }); await app.pump()
+  latestRequest(app, 'recipes').resolve({ data: null, error: { message: 'Offline' } }); await saving; await app.pump()
+  assert.equal(app.alerts.length, 0)
+  assert.equal(app.reloads, 0)
+  assert.equal(app.state.recipes[0].id, 101)
+  assert.ok(nodeText(app.nodes()).includes('Your recipe was saved, but the recipe list could not refresh.'))
+  assertCleanDraft(app)
+  clickButton(app, 'Retry loading recipes'); await app.pump()
+  latestRequest(app, 'recipes').resolve({ data: [editFixture(101)], error: null }); await app.pump()
+  assert.equal(app.state.recipeLoad, 'ready')
+})
+
+test('Pantry load failures are visible and retryable without claiming an empty Pantry', async () => {
+  const app = await failedInitialLoads(['pantry_items']); clickButton(app, '🥫 Pantry')
+  assert.ok(nodeText(app.nodes()).includes('Could not load your Pantry.'))
+  assert.equal(nodeText(app.nodes()).includes('Your pantry is empty.'), false)
+  assert.equal(app.nodes().find(node => node.props?.className === 'pantry-add-button').props.disabled, true)
+  clickButton(app, 'Retry Pantry'); await app.pump()
+  latestRequest(app, 'pantry_items').resolve({ data: [{ item_name: 'Rice' }], error: null }); await app.pump()
+  assert.deepEqual(app.state.pantryItems, ['Rice'])
+  assert.equal(app.state.pantryLoad, 'ready')
+})
+
+test('Pantry failed writes preserve input/items; a synchronous lock prevents races and retries preserve unrelated items', async () => {
+  const app = appHarness(); await app.ready('A', [], {}, ['Milk']); clickButton(app, '🥫 Pantry')
+  app.nodes().find(node => node.props?.id === 'pantry-ingredient').props.onChange({ target: { value: 'Rice' } }); app.flush()
+  const adding = app.state.changePantryItem('Rice', false, true)
+  await app.state.changePantryItem('Eggs'); await app.pump()
+  assert.equal(app.requests.filter(req => req.table === 'pantry_items' && req.method === 'insert').length, 1)
+  latestRequest(app, 'pantry_items', 'insert').reject(new Error('Offline')); await adding; await app.pump()
+  assert.equal(app.state.pantrySearch, 'Rice')
+  assert.deepEqual(app.state.pantryItems, ['Milk'])
+  assert.ok(nodeText(app.nodes()).includes('Could not add that ingredient.'))
+  const retry = app.state.changePantryItem('Rice', false, true); await app.pump()
+  latestRequest(app, 'pantry_items', 'insert').resolve({ error: null }); await retry; await app.pump()
+  assert.deepEqual(app.state.pantryItems, ['Milk', 'Rice'])
+  assert.equal(app.state.pantrySearch, '')
+  const removing = app.state.changePantryItem('Milk', true); await app.pump()
+  latestRequest(app, 'pantry_items', 'delete').resolve({ error: { message: 'Denied' } }); await removing; await app.pump()
+  assert.deepEqual(app.state.pantryItems, ['Milk', 'Rice'])
+  assert.ok(nodeText(app.nodes()).includes('Could not remove that ingredient.'))
+  const removed = app.state.changePantryItem('Milk', true); await app.pump()
+  latestRequest(app, 'pantry_items', 'delete').resolve({ error: null }); await removed; await app.pump()
+  assert.deepEqual(app.state.pantryItems, ['Rice'])
+})
+
+test('checked-state load failure disables checks and offers Retry without treating remote state as known', async () => {
+  const app = await failedInitialLoads(['checked_shopping_items']); clickButton(app, '🛒 Shop')
+  assert.ok(nodeText(app.nodes()).includes('Could not load checked items.'))
+  const before = app.requests.length
+  await app.state.changeShoppingCheck('Rice', true)
+  assert.equal(app.requests.length, before)
+  clickButton(app, 'Retry checked items'); await app.pump()
+  latestRequest(app, 'checked_shopping_items').resolve({ data: [{ item_name: 'rice' }], error: null }); await app.pump()
+  assert.equal(app.state.checkedLoad, 'ready')
+  assert.deepEqual(app.state.checkedShoppingItems, ['rice'])
+})
+
+test('check writes have per-item pending protection, visible failures and retry', async () => {
+  const app = appHarness(); await app.ready('A'); clickButton(app, '🛒 Shop')
+  const first = app.state.changeShoppingCheck('Rice', true)
+  await app.state.changeShoppingCheck('Rice', false); await app.pump()
+  assert.equal(app.requests.filter(req => req.table === 'checked_shopping_items' && req.method !== 'select').length, 1)
+  latestRequest(app, 'checked_shopping_items', 'insert').resolve({ error: { message: 'Offline' } }); await first; await app.pump()
+  assert.deepEqual(app.state.checkedShoppingItems, [])
+  assert.ok(nodeText(app.nodes()).includes('Could not save that check.'))
+  const retry = app.state.changeShoppingCheck('Rice', true); await app.pump()
+  latestRequest(app, 'checked_shopping_items', 'insert').resolve({ error: null }); await retry; await app.pump()
+  assert.deepEqual(app.state.checkedShoppingItems, [shopping.asShoppingItem('Rice').key])
+})
+
+test('partial uncheck failure reloads authoritative aliases; failed reconciliation remains visibly retryable', async () => {
+  for (const reconcileFails of [false, true]) {
+    const app = appHarness(); await app.ready('A'); clickButton(app, '🛒 Shop')
+    const ingredient = { key: 'canonical', label: 'Rice', extra: true, legacyGroups: [['old rice']] }
+    const unchecking = app.state.changeShoppingCheck(ingredient, false); await app.pump()
+    latestRequest(app, 'checked_shopping_items', 'delete').resolve({ error: null }); await app.pump()
+    assert.equal(latestRequest(app, 'checked_shopping_items', 'delete').constraints.item_name, 'old rice')
+    latestRequest(app, 'checked_shopping_items', 'delete').resolve({ error: { message: 'Offline' } }); await app.pump()
+    assert.equal(app.state.checkedLoad, 'loading')
+    latestRequest(app, 'checked_shopping_items').resolve(reconcileFails ? { data: null, error: { message: 'Offline' } } : { data: [{ item_name: 'old rice' }], error: null })
+    await unchecking; await app.pump()
+    assert.equal(app.state.checkedLoad, reconcileFails ? 'error' : 'ready')
+    assert.ok(app.nodes().some(node => node.props?.role === 'alert'))
+    if (!reconcileFails) assert.deepEqual(app.state.checkedShoppingItems, ['old rice'])
+  }
+})
+
+test('pending import disables conflicting browser editing, exposes Importing, and unlocks preserved draft after failure', async () => {
+  const app = appHarness(); await app.ready('A', [editFixture(101)]); clickButton(app, '📖 Recipes')
+  app.state.beginRecipeEdit(app.state.recipes[0]); app.flush(); enterImportUrl(app)
+  const before = draftSnapshot(app)
+  const importing = app.state.importRecipeFromUrl(); await app.pump()
+  assert.equal(app.nodes().find(node => node.type === 'fieldset').props.disabled, true)
+  assert.ok(nodeText(app.nodes()).includes('Importing…'))
+  assert.equal(app.nodes().find(node => node.type === 'button' && nodeText(node) === '✏️ Edit').props.disabled, true)
+  latestRequest(app, 'import', 'import').reject(new Error('Offline')); await importing; await app.pump()
+  assert.deepEqual(draftSnapshot(app), before)
+  assert.equal(app.nodes().find(node => node.type === 'fieldset').props.disabled, false)
+  assert.ok(app.alerts.at(-1).includes('Could not import'))
+})
+
+test('late load errors and import completions cannot leak failure status into another account', async () => {
+  const app = appHarness(); await app.ready('A'); clickButton(app, '📖 Recipes'); enterImportUrl(app)
+  const importing = app.state.importRecipeFromUrl(); await app.pump()
+  const response = latestRequest(app, 'import', 'import')
+  const loading = app.state.getRecipes(); await app.pump(); const load = latestRequest(app, 'recipes')
+  await app.ready('B')
+  response.resolve({ data: null, error: { message: 'A failure' } }); load.resolve({ data: null, error: { message: 'A failure' } })
+  await Promise.all([importing, loading]); await app.pump()
+  assert.equal(app.state.recipeLoad, 'ready'); assert.equal(app.state.importing, false)
+  assert.equal(app.alerts.length, 0)
+})
+
+test('older same-account recipe loads cannot replace a newer response or reintroduce a load error', async () => {
+  const app = appHarness(); await app.ready('A')
+  const first = app.state.getRecipes(); await app.pump(); const older = latestRequest(app, 'recipes')
+  const next = app.state.getRecipes(); await app.pump(); const newer = latestRequest(app, 'recipes')
+  newer.resolve({ data: [recipe(991)], error: null }); await next; await app.pump()
+  older.resolve({ data: null, error: { message: 'Old error' } }); await first; await app.pump()
+  assert.equal(app.state.recipeLoad, 'ready')
+  assert.deepEqual(app.state.recipes.map(item => item.id), [991])
+})
+
+test('partial uncheck reconciliation waits for other item writes and preserves their successful checked state', async () => {
+  const app = appHarness(); await app.ready('A')
+  const unchecking = app.state.changeShoppingCheck({ key: 'canonical', label: 'Rice', legacyGroups: [['old rice']] }, false)
+  const checking = app.state.changeShoppingCheck('Milk', true); await app.pump()
+  const selectsBefore = app.requests.filter(req => req.table === 'checked_shopping_items' && req.method === 'select').length
+  latestRequest(app, 'checked_shopping_items', 'delete').resolve({ error: { message: 'Offline' } }); await app.pump()
+  assert.equal(app.requests.filter(req => req.table === 'checked_shopping_items' && req.method === 'select').length, selectsBefore)
+  latestRequest(app, 'checked_shopping_items', 'insert').resolve({ error: null }); await app.pump()
+  const milk = shopping.asShoppingItem('Milk').key
+  latestRequest(app, 'checked_shopping_items').resolve({ data: [{ item_name: milk }, { item_name: 'old rice' }], error: null })
+  await Promise.all([unchecking, checking]); await app.pump()
+  assert.deepEqual(app.state.checkedShoppingItems, [milk, 'old rice'])
 })

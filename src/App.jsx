@@ -61,6 +61,21 @@ function App() {
   const [authEmail, setAuthEmail] = useState("")
   const [authPassword, setAuthPassword] = useState("")
   const [recipes, setRecipes] = useState([])
+  const [recipeLoad, setRecipeLoad] = useState("loading")
+  const recipeLoadSequence = useRef(0)
+  const [recipeNotice, setRecipeNotice] = useState("")
+  const [pantryLoad, setPantryLoad] = useState("loading")
+  const [pantryError, setPantryError] = useState("")
+  const [pantryPending, setPantryPending] = useState(false)
+  const pantryOperation = useRef(null)
+  const [checkedLoad, setCheckedLoad] = useState("loading")
+  const [checkedError, setCheckedError] = useState("")
+  const checkedOperations = useRef(new Set())
+  const [checkedPending, setCheckedPending] = useState([])
+  const checkedLoadOperation = useRef(null)
+  const checkedReconcile = useRef(false)
+  const [importing, setImporting] = useState(false)
+  const importOperation = useRef(null)
   const [recipeName, setRecipeName] = useState("")
   const [ingredientRows, setIngredientRows] = useState(() => [emptyIngredientRow()])
   const [instructions, setInstructions] = useState("")
@@ -120,6 +135,21 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
         accountRef.current = owner
         setPlannerOwner(null)
         setRecipes([])
+        recipeLoadSequence.current += 1
+        setRecipeLoad("loading")
+        setRecipeNotice("")
+        setPantryLoad("loading")
+        setPantryError("")
+        setPantryPending(false)
+        pantryOperation.current = null
+        setCheckedLoad("loading")
+        setCheckedError("")
+        checkedOperations.current = new Set()
+        setCheckedPending([])
+        checkedLoadOperation.current = null
+        checkedReconcile.current = false
+        importOperation.current = null
+        setImporting(false)
         recipeSaveOperation.current = null
         setRecipeSaving(false)
         resetRecipeDraft()
@@ -184,33 +214,30 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
       listener.subscription.unsubscribe()
     }
   }, [])
-  useEffect(() => {
-    let active = true
-    async function loadPantryItems() {
-      const owner = accountRef.current
-      if (owner.userId !== userId || (userId && owner.generation !== accountGeneration)) return
-      pantrySnapshotRef.current = { userId, items: [] }
-      setPantryItems([])
-      setPantryLoadedSession(null)
-      if (!userId) return
-      try {
-        const { data, error } = await supabase
-          .from("pantry_items")
-          .select("item_name")
-          .eq("user_id", owner.userId)
-        if (!active || !ownsAccount(owner)) return
-        if (error) throw error
-        const items = (data || []).map((item) => item.item_name)
-        pantrySnapshotRef.current = { userId, items }
-        setPantryItems(items)
-        setPantryLoadedSession(userId)
-      } catch (error) {
-        if (active && ownsAccount(owner)) console.error("Error loading pantry items:", error)
-      }
+  const loadPantryItems = useCallback(async (owner = accountRef.current) => {
+    if (!owner.userId || !ownsAccount(owner) || pantryOperation.current) return
+    const operation = {}
+    pantryOperation.current = operation
+    setPantryLoad("loading")
+    setPantryError("")
+    try {
+      const { data, error } = await supabase.from("pantry_items").select("item_name").eq("user_id", owner.userId)
+      if (!ownsAccount(owner)) return
+      if (error) throw error
+      const items = (data || []).map(item => item.item_name)
+      pantrySnapshotRef.current = { userId: owner.userId, items }
+      setPantryItems(items)
+      setPantryLoadedSession(owner.userId)
+      setPantryLoad("ready")
+    } catch {
+      if (ownsAccount(owner)) setPantryLoad("error")
+    } finally {
+      if (pantryOperation.current === operation) pantryOperation.current = null
     }
-    loadPantryItems()
-    return () => { active = false }
-  }, [userId, accountGeneration, ownsAccount])
+  }, [ownsAccount])
+  useEffect(() => {
+    loadPantryItems(accountRef.current)
+  }, [userId, accountGeneration, loadPantryItems])
   useEffect(() => {
     async function rebuildForPantry() {
       if (!plannerOwner || !ownsAccount(plannerOwner) || !userId || pantryLoadedSession !== userId) return
@@ -220,35 +247,29 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
     }
     rebuildForPantry()
   }, [userId, plannerOwner, pantryLoadedSession, pantryItems, weeklyMeals, ownsAccount])
-useEffect(() => {
-  let active = true
-  async function loadCheckedShoppingItems() {
-    const owner = accountRef.current
-    if (owner.userId !== userId || (userId && owner.generation !== accountGeneration)) return
-    if (!userId) {
-      setCheckedShoppingItems([])
-      return
+const loadCheckedShoppingItems = useCallback(async (owner = accountRef.current) => {
+  if (!owner.userId || !ownsAccount(owner) || checkedLoadOperation.current) return
+  const operation = {}
+  checkedLoadOperation.current = operation
+  setCheckedLoad("loading")
+  try {
+    const { data, error } = await supabase.from("checked_shopping_items").select("item_name").eq("user_id", owner.userId)
+    if (!ownsAccount(owner)) return
+    if (error) throw error
+    setCheckedShoppingItems((data || []).map(item => item.item_name))
+    setCheckedLoad("ready")
+  } catch {
+    if (ownsAccount(owner)) {
+      setCheckedLoad("error")
+      setCheckedError("Could not load checked items. Please retry before changing checks.")
     }
-
-    const { data, error } = await supabase
-      .from("checked_shopping_items")
-      .select("item_name")
-      .eq("user_id", owner.userId)
-
-    if (!active || !ownsAccount(owner)) return
-    if (error) {
-      console.error("Error loading checked shopping items:", error)
-      return
-    }
-
-    setCheckedShoppingItems(
-      (data || []).map((item) => item.item_name)
-    )
+  } finally {
+    if (checkedLoadOperation.current === operation) checkedLoadOperation.current = null
   }
-
-  loadCheckedShoppingItems()
-  return () => { active = false }
-}, [userId, accountGeneration, ownsAccount])
+}, [ownsAccount])
+useEffect(() => {
+  loadCheckedShoppingItems(accountRef.current)
+}, [userId, accountGeneration, loadCheckedShoppingItems])
 
   useEffect(() => {
     if (!plannerOwner || !ownsAccount(plannerOwner)) return
@@ -342,35 +363,42 @@ useEffect(() => {
 
   const getRecipes = useCallback(async (owner = accountRef.current) => {
     if (!owner.userId || !ownsAccount(owner)) return
-    const { data, error } = await supabase.from('recipes').select('*')
- .or(`user_id.eq.${owner.userId},user_id.is.null`)
-    if (!ownsAccount(owner)) return
-    if (error) {
-      console.log(error)
-      return
-    }
+    const sequence = ++recipeLoadSequence.current
+    setRecipeLoad("loading")
+    try {
+      const { data, error } = await supabase.from('recipes').select('*')
+        .or(`user_id.eq.${owner.userId},user_id.is.null`)
+      if (!ownsAccount(owner) || sequence !== recipeLoadSequence.current) return false
+      if (error) throw error
 
-    const savedRecipes = data.map((recipe) => {
-      const rows = getIngredientRows(recipe)
-      return {
-        id: recipe.id,
-        user_id: recipe.user_id,
-        name: recipe.name,
-        categories: recipe.categories || [],
-        diet_tags: recipe.diet_tags || [],
-        image_url: recipe.image_url || "",
-        instructions: recipe.instructions || "",
-        structured_ingredients: rows,
-        ingredients: rows.map(formatIngredient),
+      const savedRecipes = data.map((recipe) => {
+        const rows = getIngredientRows(recipe)
+        return {
+          id: recipe.id,
+          user_id: recipe.user_id,
+          name: recipe.name,
+          categories: recipe.categories || [],
+          diet_tags: recipe.diet_tags || [],
+          image_url: recipe.image_url || "",
+          instructions: recipe.instructions || "",
+          structured_ingredients: rows,
+          ingredients: rows.map(formatIngredient),
+        }
+      })
+
+      setRecipes(savedRecipes)
+      setRecipeLoad("ready")
+      setRecipeNotice("")
+      const previousMeals = weeklyMealsRef.current
+      if (previousMeals.length) {
+        const refreshed = refreshWeeklyMeals(previousMeals, savedRecipes)
+        setWeeklyMeals(refreshed)
+        setShoppingList((previous) => ownsAccount(owner) ? rebuildShoppingList(previous, previousMeals, refreshed, pantrySnapshotRef.current.userId === owner.userId ? pantrySnapshotRef.current.items : []) : previous)
       }
-    })
-
-    setRecipes(savedRecipes)
-    const previousMeals = weeklyMealsRef.current
-    if (previousMeals.length) {
-      const refreshed = refreshWeeklyMeals(previousMeals, savedRecipes)
-      setWeeklyMeals(refreshed)
-      setShoppingList((previous) => ownsAccount(owner) ? rebuildShoppingList(previous, previousMeals, refreshed, pantrySnapshotRef.current.userId === owner.userId ? pantrySnapshotRef.current.items : []) : previous)
+      return true
+    } catch {
+      if (ownsAccount(owner) && sequence === recipeLoadSequence.current) setRecipeLoad("error")
+      return false
     }
   }, [ownsAccount])
   useEffect(() => {
@@ -385,6 +413,8 @@ useEffect(() => {
 }, [editingRecipeId, recipeFormGeneration, activeTab])
 
 function resetRecipeDraft() {
+  importOperation.current = null
+  setImporting(false)
   pendingEditScroll.current = false
   recipeDraftGeneration.current += 1
   setRecipeFormGeneration(value => value + 1)
@@ -433,6 +463,9 @@ async function importRecipeFromUrl() {
     return
   }
   const generation = ++recipeDraftGeneration.current
+  const operation = {}
+  importOperation.current = operation
+  setImporting(true)
   try {
     const { data, error } = await supabase.functions.invoke("import-recipe", {
       body: { url: recipeUrl }
@@ -450,6 +483,11 @@ async function importRecipeFromUrl() {
     if (!ownsAccount(owner) || recipeDraftGeneration.current !== generation) return
     console.error(error)
     alert("Could not import that recipe.")
+  } finally {
+    if (importOperation.current === operation) {
+      importOperation.current = null
+      setImporting(false)
+    }
   }
 }
 async function addRecipe() {
@@ -487,9 +525,15 @@ async function addRecipe() {
     if (!ownsAccount(owner)) return
     if (error) throw error
     if (!data?.length) throw new Error("Your recipe was not saved. It may no longer be available to edit.")
-    await getRecipes(owner)
+    // The write succeeded. A list-refresh failure must not be reported as a save failure.
+    const refreshed = await getRecipes(owner)
     if (!ownsAccount(owner)) return
     resetRecipeDraft()
+    if (!refreshed) {
+      setRecipeNotice("Your recipe was saved, but the recipe list could not refresh. Please retry loading recipes.")
+      return
+    }
+    setRecipeNotice("")
     window.location.reload()
   } catch (error) {
     if (!ownsAccount(owner)) return
@@ -753,6 +797,76 @@ function cookTonight(recipe) {
   setWeeklyMeals(updatedMeals)
   createShoppingList(updatedMeals)
 }
+async function changePantryItem(item, remove = false, clearInput = false) {
+  const owner = plannerOwner
+  if (!owner?.userId || !ownsAccount(owner) || pantryOperation.current || pantryLoad !== "ready") return
+  if (!item || (!remove && pantryItems.includes(item))) return
+  const operation = {}
+  pantryOperation.current = operation
+  setPantryPending(true)
+  setPantryError("")
+  try {
+    const query = supabase.from("pantry_items")
+    const { error } = remove
+      ? await query.delete().eq("user_id", owner.userId).eq("item_name", item)
+      : await query.insert({ user_id: owner.userId, item_name: item })
+    if (!ownsAccount(owner)) return
+    if (error) throw error
+    setPantryItems(current => remove ? current.filter(value => value !== item) : [...new Set([...current, item])])
+    if (clearInput) setPantrySearch(current => current.trim() === item ? "" : current)
+  } catch {
+    if (ownsAccount(owner)) setPantryError(remove ? "Could not remove that ingredient. Please try again." : "Could not add that ingredient. Your entry is still here. Please try again.")
+  } finally {
+    if (pantryOperation.current === operation) {
+      pantryOperation.current = null
+      setPantryPending(false)
+    }
+  }
+}
+async function changeShoppingCheck(ingredient, checked) {
+  const owner = plannerOwner
+  const key = asShoppingItem(ingredient).key
+  const operations = checkedOperations.current
+  if (!owner?.userId || !ownsAccount(owner) || checkedLoad !== "ready" || checkedLoadOperation.current || checkedReconcile.current || operations.has(key)) return
+  operations.add(key)
+  setCheckedPending([...operations])
+  setCheckedError("")
+  try {
+    if (checked) {
+      const { error } = await supabase.from("checked_shopping_items").insert({ user_id: owner.userId, item_name: key })
+      if (!ownsAccount(owner)) return
+      if (error) throw error
+      setCheckedShoppingItems(current => [...new Set([...current, key])])
+    } else {
+      const identities = shoppingCheckIdentities(ingredient)
+      // Keep exact equality for canonical keys and every existing legacy alias.
+      for (const identity of identities) {
+        if (!ownsAccount(owner)) return
+        const { error } = await supabase.from("checked_shopping_items").delete().eq("user_id", owner.userId).eq("item_name", identity)
+        if (!ownsAccount(owner)) return
+        if (error) throw error
+      }
+      setCheckedShoppingItems(current => current.filter(item => !identities.includes(item)))
+    }
+  } catch {
+    if (ownsAccount(owner)) {
+      setCheckedError(checked ? "Could not save that check. Please try again." : "Could not finish unchecking that item. Checked items are being reloaded; please review and try again.")
+      if (!checked) {
+        // Other in-flight item writes must settle before an authoritative reload.
+        checkedReconcile.current = true
+      }
+    }
+  } finally {
+    operations.delete(key)
+    if (ownsAccount(owner)) {
+      setCheckedPending([...operations])
+      if (!operations.size && checkedReconcile.current) {
+        checkedReconcile.current = false
+        await loadCheckedShoppingItems(owner)
+      }
+    }
+  }
+}
 function createShoppingList(meals) {
   setShoppingList((previous) => rebuildShoppingList(previous, weeklyMeals, meals, pantryItems))
 }
@@ -889,6 +1003,12 @@ const pantryMatches = recipes
     if (hasUnsavedChanges) return <p role="status">You have unsaved changes.</p>
     if (preferenceSave?.status === "success") return <p role="status">✓ Preferences saved</p>
     return null
+  }
+ function renderCheckedStatus() {
+    return <>
+      {checkedLoad === "loading" && <p role="status">Loading checked items…</p>}
+      {checkedError && <div role="alert"><p>{checkedError}</p><button className="small-button" disabled={checkedLoad === "loading" || checkedPending.length > 0} onClick={() => { setCheckedError(""); loadCheckedShoppingItems() }}>Retry checked items</button></div>}
+    </>
   }
  function renderRestrictionFields() {
     const values = getAllergyValues(onboardingAnswers.allergies)
@@ -1280,7 +1400,7 @@ if (!saved || !ownsAccount(owner)) return
       <section ref={recipeBuilderRef} className="card recipe-builder-section" hidden={activeTab !== "recipes"}>
         <h2>Add a Recipe</h2>
 
-  <fieldset className="form recipe-form-modern" disabled={recipeSaving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+  <fieldset className="form recipe-form-modern" disabled={recipeSaving || importing} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
 
   <div className="recipe-import-modern">
     <div>
@@ -1301,7 +1421,7 @@ if (!saved || !ownsAccount(owner)) return
         className="secondary-button"
         onClick={importRecipeFromUrl}
       >
-        Import Recipe
+        {importing ? "Importing…" : "Import Recipe"}
       </button>
     </div>
   </div>
@@ -1620,6 +1740,7 @@ if (!saved || !ownsAccount(owner)) return
   <button type="button" className="small-button" onClick={cancelRecipeEdit}>Cancel Edit</button>
 )}
 {recipeSaving && <p role="status">Saving your recipe…</p>}
+{importing && <p role="status">Importing…</p>}
         </fieldset>
       </section>
 
@@ -1638,6 +1759,9 @@ if (!saved || !ownsAccount(owner)) return
       </section>
       )}
 
+     {recipeNotice && <p role="status">{recipeNotice}</p>}
+     {recipeLoad === "loading" && <p role="status">Loading recipes…</p>}
+     {recipeLoad === "error" && <div role="alert"><p>Could not load recipes. Your existing recipes have been kept.</p><button className="small-button" onClick={() => getRecipes()}>Retry loading recipes</button></div>}
      <main className="grid recipes-grid">
       {activeTab === "recipes" && (
         <section className="card">
@@ -1664,7 +1788,7 @@ if (!saved || !ownsAccount(owner)) return
 <option value="Soup">Soup</option>
 <option value="Dessert">Dessert</option>
 </select>
-          {recipes.length === 0 && <p className="empty">No recipes yet.</p>}
+          {recipeLoad === "ready" && recipes.length === 0 && <p className="empty">No recipes yet.</p>}
            
          {recipes
   .filter((recipe) =>
@@ -1675,7 +1799,7 @@ if (!saved || !ownsAccount(owner)) return
     (recipe.categories || []).includes(selectedCategory)
   )
   .length === 0 ? (
-    <p className="empty">
+    recipeLoad === "ready" && recipes.length > 0 && <p className="empty">
       No recipes found. Try another search or category.
     </p>
   ) : (
@@ -1749,7 +1873,7 @@ if (!saved || !ownsAccount(owner)) return
 
           <div className="recipe-actions">
             {recipe.user_id === userId && (
-              <button className="small-button" disabled={recipeSaving} onClick={() => beginRecipeEdit(recipe)}>
+              <button className="small-button" disabled={recipeSaving || importing} onClick={() => beginRecipeEdit(recipe)}>
                 ✏️ Edit
               </button>
             )}
@@ -1993,6 +2117,7 @@ if (!saved || !ownsAccount(owner)) return
         {activeTab === "planner" && (
   <section className="card shopping-progress-card">
     <h2>🛒 Shopping Progress</h2>
+    {renderCheckedStatus()}
 
     <p>
       {checkedShoppingCount} of{" "}
@@ -2027,6 +2152,7 @@ if (!saved || !ownsAccount(owner)) return
         <section className="card">
           <h2>🛒Shopping List</h2>
           <p>Checked items: {checkedShoppingCount}</p>
+          {renderCheckedStatus()}
 
           {currentShoppingItems.length === 0 && <p className="empty">Your grocery list will appear here.</p>}
 
@@ -2043,43 +2169,8 @@ if (!saved || !ownsAccount(owner)) return
   <input
   type="checkbox"
   checked={isShoppingItemChecked(ingredient, checkedShoppingItems)}
-  onChange={async (e) => {
-    const owner = plannerOwner
-    if (!owner?.userId || !ownsAccount(owner)) return
-    if (e.target.checked) {
-      const { error } = await supabase
-  .from("checked_shopping_items")
-  .insert({
-    user_id: owner.userId,
-    item_name: asShoppingItem(ingredient).key,
-  })
-
-if (!ownsAccount(owner)) return
-if (error) {
-  console.error("Error saving checked item:", error)
-  return
-}
-      setCheckedShoppingItems((current) => ownsAccount(owner) ? [...new Set([...current, asShoppingItem(ingredient).key])] : current)
-    } else {
-      const identities = shoppingCheckIdentities(ingredient)
-      // Exact equality avoids PostgREST IN quoting of JSON-based canonical keys.
-      for (const identity of identities) {
-        if (!ownsAccount(owner)) return
-        const { error } = await supabase
-          .from("checked_shopping_items")
-          .delete()
-          .eq("user_id", owner.userId)
-          .eq("item_name", identity)
-
-        if (!ownsAccount(owner)) return
-        if (error) {
-          console.error("Error removing checked item:", error)
-          return
-        }
-      }
-      setCheckedShoppingItems((current) => ownsAccount(owner) ? current.filter((item) => !identities.includes(item)) : current)
-    }
-  }}
+  disabled={checkedLoad !== "ready" || checkedPending.includes(asShoppingItem(ingredient).key) || checkedReconcile.current}
+  onChange={(e) => changeShoppingCheck(ingredient, e.target.checked)}
 />
   {asShoppingItem(ingredient).label}
 </> 
@@ -2096,32 +2187,14 @@ if (error) {
       <h2>What do you already have?</h2>
       <p>Save ingredients you have on hand. Dinnerlyst won’t add them to your generated shopping list.</p>
     </div>
-    <form className="pantry-add" onSubmit={async (e) => {
-  const owner = plannerOwner
-  if (!owner?.userId || !ownsAccount(owner)) return
-  e.preventDefault()
-  if (pantrySearch.trim()) {
-    const newItem = pantrySearch.trim()
-
-if (!pantryItems.includes(newItem) && session?.user?.id) {
-  const { error } = await supabase
-    .from("pantry_items")
-    .insert({
-      user_id: owner.userId,
-      item_name: newItem
-    })
-
-  if (!ownsAccount(owner)) return
-  if (!error) {
-    setPantryItems([...pantryItems, newItem])
-  } else {
-    console.error("Error saving pantry item:", error)
-  }
-}
-
-    setPantrySearch("")
-  }
-}}>
+    {pantryLoad === "loading" && <p role="status">Loading Pantry…</p>}
+    {pantryLoad === "error" && <div role="alert"><p>Could not load your Pantry.</p><button className="small-button" onClick={() => loadPantryItems()}>Retry Pantry</button></div>}
+    {pantryError && <p role="alert">{pantryError}</p>}
+    {pantryPending && <p role="status">Saving Pantry…</p>}
+    <form className="pantry-add" onSubmit={(e) => {
+      e.preventDefault()
+      return changePantryItem(pantrySearch.trim(), false, true)
+    }}>
       <label htmlFor="pantry-ingredient">Add ingredient</label>
       <div className="pantry-add-row">
     <input
@@ -2131,14 +2204,14 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
   onChange={(e) => setPantrySearch(e.target.value)}
   id="pantry-ingredient"
 />
-        <button type="submit" className="pantry-add-button">Add</button>
+        <button type="submit" disabled={pantryLoad !== "ready" || pantryPending} className="pantry-add-button">Add</button>
       </div>
     </form>
     <div className="pantry-section">
       <h3>Your Pantry</h3>
       <div className="pantry-chip-group">
 {pantryItems.length === 0 ? (
-  <p className="pantry-empty">Your pantry is empty. Add an ingredient above or choose a pantry staple below.</p>
+  pantryLoad === "ready" && <p className="pantry-empty">Your pantry is empty. Add an ingredient above or choose a pantry staple below.</p>
 ) : (
   pantryItems.map((item) => (
   <span key={item} className="pantry-chip">
@@ -2147,26 +2220,8 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
       type="button"
       className="pantry-remove"
       aria-label={`Remove ${item}`}
-      onClick={async () =>
-       {
-  const owner = plannerOwner
-  if (!owner?.userId || !ownsAccount(owner)) return
-  const { error } = await supabase
-    .from("pantry_items")
-    .delete()
-    .eq("user_id", owner.userId)
-    .eq("item_name", item)
-
-  if (!ownsAccount(owner)) return
-  if (!error) {
-    setPantryItems(
-      pantryItems.filter((pantryItem) => pantryItem !== item)
-    )
-  } else {
-    console.error("Error deleting pantry item:", error)
-  }
-}
-      }
+      disabled={pantryLoad !== "ready" || pantryPending}
+      onClick={() => changePantryItem(item, true)}
     >
       ✕
     </button>
@@ -2196,27 +2251,8 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
     key={item}
     type="button"
     className="pantry-staple"
-    disabled={pantryItems.includes(item)}
-    onClick={async () => {
-     const owner = plannerOwner
-     if (!owner?.userId || !ownsAccount(owner)) return
-     if (!pantryItems.includes(item) && session?.user?.id) {
-  const { error } = await supabase
-    .from("pantry_items")
-    .insert({
-      user_id: owner.userId,
-      item_name: item
-    })
-
-  if (!ownsAccount(owner)) return
-  if (!error) {
-    setPantryItems([...pantryItems, item])
-  } else {
-    console.error("Error saving pantry item:", error)
-  }
-}
-      setPantrySearch("")
-    }}
+    disabled={pantryItems.includes(item) || pantryLoad !== "ready" || pantryPending}
+    onClick={() => changePantryItem(item, false, true)}
   >
     {item}{pantryItems.includes(item) && <span className="pantry-added">✓ Added</span>}
   </button>
