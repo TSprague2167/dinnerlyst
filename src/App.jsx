@@ -938,6 +938,7 @@ const pantryMatches = recipes
       <div className="onboarding-card">
         <h2>Who are we cooking for?</h2>
         <p>How many people are you feeding?</p>
+        <p>Saved for reference. Recipe and shopping-list quantities are not currently adjusted for household size.</p>
 
         <div className="household-counter">
           <button
@@ -1151,7 +1152,7 @@ if (onboardingStep === 4) {
 
       <div className="onboarding-card">
         <h2>What kind of cook are you?</h2>
-        <p>We'll use this to choose recipes that fit your style.</p>
+        <p>Saved for reference. This does not currently change meal suggestions.</p>
         <div className="diet-options">
   <button
     className={
@@ -1218,7 +1219,7 @@ if (onboardingStep === 5) {
       <div className="onboarding-card">
         <h2>Let's plan some dinners.</h2>
         <p>
-          We'll use your preferences to help personalize your meal planning.
+          Your dietary preferences and selected food restrictions help filter meal suggestions.
         </p>
         <button
   className="onboarding-continue"
@@ -2286,6 +2287,7 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
     <h2>⚙️ Preferences</h2>
  <div>
   <p>Household size</p>
+  <p>Saved for reference. Recipe and shopping-list quantities are not currently adjusted for household size.</p>
 
   <div className="household-counter">
     <button
@@ -2444,6 +2446,7 @@ if (!pantryItems.includes(newItem) && session?.user?.id) {
 </div>
 <div>
   <p>Cooking style</p>
+  <p>Saved for reference. This does not currently change meal suggestions.</p>
   <button
   className={
     onboardingAnswers.cookingStyle === "Quick & Easy"
