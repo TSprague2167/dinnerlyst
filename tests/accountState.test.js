@@ -66,7 +66,7 @@ test('successful reconciliation clears unavailable recipes and preserves assignm
 // Exercise the actual App handlers/effects without a browser or live Supabase.
 // JSX is compiled using the project's existing build dependency; hooks and network
 // completion are deterministic so responses can arrive in arbitrary account order.
-function appHarness(storage = memoryStorage(), weekday = null, callbackType = null) {
+function appHarness(storage = memoryStorage(), weekday = null, callbackType = null, reducedMotion = false) {
   const hooks = [], requests = [], alerts = [], confirmations = [], scrollRequests = []
   const initialSession = deferred()
   const mountedRefs = new Set()
@@ -126,7 +126,7 @@ function appHarness(storage = memoryStorage(), weekday = null, callbackType = nu
   const helpers = { ...account, ...shopping, ...ingredients, ...pantry }
   const code = transformSync('App.jsx', source, { jsx: { runtime: 'classic' } }).code
   const App = new Function('React', 'useState', 'useRef', 'useEffect', 'useCallback', 'initialAuthCallbackType', 'supabase', 'observe', 'window', 'alert', 'Date', ...Object.keys(helpers), code + '\nreturn App')(
-    React, React.useState, React.useRef, React.useEffect, React.useCallback, callbackType, supabase, value => { snapshot = value }, { localStorage: storage, location: { reload() { reloads++ } }, confirm(message) { confirmations.push(message); return confirmResult } }, message => alerts.push(message), class extends Date { toLocaleDateString(...args) { return weekday || super.toLocaleDateString(...args) } }, ...Object.values(helpers))
+    React, React.useState, React.useRef, React.useEffect, React.useCallback, callbackType, supabase, value => { snapshot = value }, { matchMedia: query => ({ matches: reducedMotion && query === '(prefers-reduced-motion: reduce)' }), localStorage: storage, location: { reload() { reloads++ } }, confirm(message) { confirmations.push(message); return confirmResult } }, message => alerts.push(message), class extends Date { toLocaleDateString(...args) { return weekday || super.toLocaleDateString(...args) } }, ...Object.values(helpers))
   function flush() {
     let iterations = 0
     while (dirty) {
@@ -140,6 +140,7 @@ function appHarness(storage = memoryStorage(), weekday = null, callbackType = nu
           const ref = node.props.ref
           ref.current = { scrollIntoView(options) {
             scrollRequests.push({ options, target: node, editingRecipeId: snapshot.editingRecipeId,
+              renderedMeals: structuredClone(snapshot.weeklyMeals),
               renderedName: nodes(node).find(item => item.props?.placeholder === 'Recipe name')?.props.value })
           } }
           mountedRefs.add(ref)
@@ -1853,4 +1854,90 @@ test('an unsuccessful callback with no session cannot force a later ordinary log
   app.resolveInitialSession({ data: { session: null }, error: null }); await app.pump()
   await app.ready('A')
   assert.equal(passwordHeading(app), false)
+})
+
+const resultsScrolls = app => app.scrollRequests.filter(request => nodeText(request.target).includes('This Week'))
+const scrollTestDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+test('changed full Generate scrolls the This Week target once, only after the results render', async () => {
+  const app = appHarness(); await app.ready('A', Array.from({ length: 7 }, (_, index) => recipe(700 + index)))
+  assert.equal(resultsScrolls(app).length, 0)
+  app.state.generateWeeklyMeals()
+  assert.equal(resultsScrolls(app).length, 0, 'no scroll before React commits the new plan')
+  app.flush()
+  assert.equal(resultsScrolls(app).length, 1)
+  const request = resultsScrolls(app)[0]
+  assert.equal(request.target.props.className, 'section-header')
+  assert.equal(app.nodes(request.target).find(node => node.type === 'h2').props.children[0], 'This Week')
+  assert.deepEqual(request.options, { behavior: 'smooth', block: 'start' })
+  assert.equal(request.renderedMeals.filter(item => item.meal).length, 7)
+  assert.deepEqual(request.renderedMeals, app.state.weeklyMeals)
+  assertPlannerCacheMatches(app)
+  clickButton(app, '⚙️ Settings / Preferences'); clickButton(app, '🍽 Plan')
+  assert.equal(resultsScrolls(app).length, 1, 'returning to Plan cannot replay a consumed request')
+})
+
+test('changed partial Generate scrolls and reduced-motion Generate requests non-smooth scrolling', async () => {
+  for (const reducedMotion of [false, true]) {
+    const app = appHarness(memoryStorage(), null, null, reducedMotion)
+    await app.ready('A', [recipe(701)])
+    app.state.generateWeeklyMeals(); app.flush()
+    assert.equal(resultsScrolls(app).length, 1)
+    assert.deepEqual(resultsScrolls(app)[0].options, { behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' })
+    assert.equal(app.state.weeklyMeals.filter(item => item.meal).length, 1)
+    assert.ok(shortageText(app).includes('1 of 7'))
+    assertPlannerCacheMatches(app)
+  }
+})
+
+test('Generate never scrolls on an empty library, zero assignments, unchanged assignments, or all locked days', async () => {
+  const candidate = recipe(701)
+  for (const scenario of ['empty library', 'zero eligible', 'unchanged', 'locked']) {
+    const storage = memoryStorage(), owner = { userId: 'A', generation: 1 }
+    const meals = scrollTestDays.map((day, at) => ({ day, meal: at === 0 ? candidate : null }))
+    const locks = scenario === 'locked' ? scrollTestDays : []
+    account.persistPlannerCache(storage, owner, owner, { weeklyMeals: meals, shoppingList: {}, lockedDays: locks })
+    const app = appHarness(storage)
+    await app.ready('A', scenario === 'empty library' ? [] : [candidate], scenario === 'zero eligible' ? { allergies: ['Peanut-Free'] } : {})
+    app.state.generateWeeklyMeals(); app.flush()
+    assert.equal(resultsScrolls(app).length, 0, scenario)
+    if (scenario === 'locked' || scenario === 'unchanged') assert.deepEqual(app.state.weeklyMeals.map(item => item.meal?.id ?? null), meals.map(item => item.meal?.id ?? null))
+    if (scenario === 'zero eligible') assert.equal(app.state.weeklyMeals.some(item => item.meal), false, 'even a failure that clears assignments must not scroll')
+    assertPlannerCacheMatches(app)
+  }
+})
+
+test('Regenerate, Cook Tonight, cache restoration, recipe refresh and lock updates never request results scrolling', async () => {
+  const old = bestRecipe(701, 'Rice meal', ['Rice']), other = bestRecipe(702, 'Egg meal', ['Eggs'])
+  const app = await bestApp({ library: [old, other], meals: [{ day: 'Thursday', meal: old }], pantryNames: ['Eggs'] })
+  assert.equal(resultsScrolls(app).length, 0, 'cache restoration')
+  app.state.regenerateMeal('Thursday'); app.flush()
+  assert.equal(app.state.weeklyMeals[0].meal.id, other.id)
+  assert.equal(resultsScrolls(app).length, 0, 'Regenerate')
+  app.state.cookTonight(old); app.flush()
+  assert.equal(app.state.weeklyMeals[0].meal.id, old.id)
+  assert.equal(resultsScrolls(app).length, 0, 'Cook Tonight')
+  clickButton(app, 'Lock')
+  assert.equal(resultsScrolls(app).length, 0, 'lock-only update')
+  const loading = app.state.getRecipes(); await app.pump()
+  latestRequest(app, 'recipes').resolve({ data: [old, other], error: null }); await loading; await app.pump()
+  assert.equal(resultsScrolls(app).length, 0, 'recipe refresh')
+  assertPlannerCacheMatches(app)
+})
+
+test('leaving Plan or changing accounts cancels an unconsumed Generate scroll request', async () => {
+  const app = appHarness(); await app.ready('A', [recipe(701)])
+  app.state.generateWeeklyMeals()
+  clickButton(app, '⚙️ Settings / Preferences')
+  assert.equal(resultsScrolls(app).length, 0)
+  clickButton(app, '🍽 Plan')
+  assert.equal(resultsScrolls(app).length, 0, 'no delayed scroll on returning')
+  // Change the assignments so this second Generate would qualify for scrolling.
+  const fresh = appHarness(); await fresh.ready('A', [recipe(702)])
+  fresh.state.generateWeeklyMeals()
+  fresh.emit('B')
+  await fresh.pump()
+  assert.equal(resultsScrolls(fresh).length, 0)
+  await fresh.ready('C', [recipe(703)])
+  assert.equal(resultsScrolls(fresh).length, 0, 'new accounts cannot inherit a scroll request')
 })

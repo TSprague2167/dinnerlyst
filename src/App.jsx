@@ -117,6 +117,8 @@ const [onboardingAnswers, setOnboardingAnswers] = useState(defaultOnboardingAnsw
 
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [imageFile, setImageFile] = useState(null)
+  const weeklyResultsRef = useRef(null)
+  const pendingGenerateScroll = useRef(null)
   const recipeBuilderRef = useRef(null)
   const pendingEditScroll = useRef(false)
   const recipeDraftGeneration = useRef(0)
@@ -145,6 +147,7 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
       const owner = nextAccountOwner(previous, nextId)
       if (owner !== previous) {
         accountRef.current = owner
+        pendingGenerateScroll.current = null
         passwordSetupOperation.current = null
         setPasswordSetupUserId(null)
         setNewPassword("")
@@ -435,6 +438,15 @@ useEffect(() => {
   recipeBuilderRef.current.scrollIntoView({ behavior: "smooth", block: "start" })
 }, [editingRecipeId, recipeFormGeneration, activeTab])
 
+useEffect(() => {
+  const request = pendingGenerateScroll.current
+  pendingGenerateScroll.current = null
+  if (!request?.owner || activeTab !== "planner" || !ownsAccount(request.owner) ||
+    request.meals !== weeklyMeals || !weeklyResultsRef.current) return
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+  weeklyResultsRef.current.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" })
+}, [weeklyMeals, activeTab, plannerOwner, ownsAccount])
+
 function resetRecipeDraft() {
   importOperation.current = null
   setImporting(false)
@@ -615,6 +627,7 @@ function toggleDayLock(day) {
   }
 }
   function generateWeeklyMeals() {
+    pendingGenerateScroll.current = null
     const randomMeals = []
     const usedRecipeIds = new Set(
       weeklyMeals
@@ -670,6 +683,13 @@ return {
     setPlanFeedback(filledDays === 7 ? null : unfilledSelections === 0
       ? `${filledDays} of 7 days are currently filled. Some locked days have no meal. Locked days were kept unchanged; unlock an empty day before generating again.`
       : `${filledDays} of 7 days are currently filled. ${assignedMeals === 0 ? "No additional suitable recipes were available. " : ""}Dinnerlyst couldn't find enough different recipes matching your preferences and restrictions without repeating planned recipes to fill the remaining unlocked days.${preservedLockedDays ? " Locked days were kept unchanged." : ""}`)
+    const assignmentsChanged = meals.some(item =>
+      (item.meal?.id ?? null) !== (weeklyMeals.find(previous => previous.day === item.day)?.meal?.id ?? null)
+    )
+    if (assignedMeals > 0 && assignmentsChanged && activeTab === "planner" &&
+      daysOfWeek.some(day => !lockedDays.includes(day))) {
+      pendingGenerateScroll.current = { owner: plannerOwner, meals }
+    }
     setWeeklyMeals(meals)
     createShoppingList(meals)
   }
@@ -2072,7 +2092,7 @@ if (!saved || !ownsAccount(owner)) return
   </button>
 )}
 </div>
-  <div className="section-header">
+  <div ref={weeklyResultsRef} className="section-header">
   <h2>This Week</h2>
   <p>Your planned meals at a glance.</p>
 </div>
