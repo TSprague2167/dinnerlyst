@@ -1258,6 +1258,7 @@ select:focus {
   .app-header .header-controls { justify-content: flex-start; }
   .app-header .tab-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .app-header .tab-nav button { padding: 11px 8px; }
+  .app-header .tab-nav .add-recipe-tab { grid-column: 1 / -1; }
 }
 
 /* Pantry view: scoped layout and controls. */

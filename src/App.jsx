@@ -433,7 +433,7 @@ useEffect(() => {
   }, [userId, accountGeneration, getRecipes])
 
 useEffect(() => {
-  if (!pendingEditScroll.current || !editingRecipeId || activeTab !== "recipes" || !recipeBuilderRef.current) return
+  if (!pendingEditScroll.current || !editingRecipeId || activeTab !== "add-recipe" || !recipeBuilderRef.current) return
   pendingEditScroll.current = false
   recipeBuilderRef.current.scrollIntoView({ behavior: "smooth", block: "start" })
 }, [editingRecipeId, recipeFormGeneration, activeTab])
@@ -475,6 +475,7 @@ function beginRecipeEdit(recipe) {
   setInstructions(recipe.instructions || "")
   setDietTags([...(recipe.diet_tags || [])])
   setEditingRecipeId(recipe.id)
+  setActiveTab("add-recipe")
   pendingEditScroll.current = true
 }
 function cancelRecipeEdit() {
@@ -538,6 +539,7 @@ async function addRecipe() {
     alert(ingredientError || "Please enter a recipe name.")
     return
   }
+  const isNewRecipe = !editingRecipeId
   const operation = {}
   recipeSaveOperation.current = operation
   setRecipeSaving(true)
@@ -565,12 +567,16 @@ async function addRecipe() {
     const refreshed = await getRecipes(owner)
     if (!ownsAccount(owner)) return
     resetRecipeDraft()
+    if (isNewRecipe) {
+      setSearchTerm("")
+      setSelectedCategory("All")
+    }
+    setActiveTab("recipes")
     if (!refreshed) {
       setRecipeNotice("Your recipe was saved, but the recipe list could not refresh. Please retry loading recipes.")
       return
     }
     setRecipeNotice("")
-    window.location.reload()
   } catch (error) {
     if (!ownsAccount(owner)) return
     console.error(error)
@@ -1492,6 +1498,9 @@ if (!saved || !ownsAccount(owner)) return
         <button aria-current={activeTab === "recipes" ? "page" : undefined} onClick={() => setActiveTab("recipes")}>
           📖 Recipes
         </button>
+        <button className="add-recipe-tab" aria-current={activeTab === "add-recipe" ? "page" : undefined} onClick={() => setActiveTab("add-recipe")}>
+          ➕ Add Recipe
+        </button>
         <button aria-current={activeTab === "shopping" ? "page" : undefined} onClick={() => setActiveTab("shopping")}>
           🛒 Shop
         </button>
@@ -1502,8 +1511,8 @@ if (!saved || !ownsAccount(owner)) return
       </header>
 
 
-      <section ref={recipeBuilderRef} className="card recipe-builder-section" hidden={activeTab !== "recipes"}>
-        <h2>Add a Recipe</h2>
+      <section ref={recipeBuilderRef} className="card recipe-builder-section" hidden={activeTab !== "add-recipe"}>
+        <h2>{editingRecipeId ? "Edit Recipe" : "Add Recipe"}</h2>
 
   <fieldset className="form recipe-form-modern" disabled={recipeSaving || importing} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
 
