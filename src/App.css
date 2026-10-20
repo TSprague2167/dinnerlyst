@@ -1297,3 +1297,68 @@ select:focus {
   .pantry-add-button { width: 100%; }
   .pantry-view .pantry-match-card { padding: 16px; }
 }
+
+/* Standalone recipe builder: a readable flow without changing other feature forms. */
+.recipe-builder-section {
+  width: 100%;
+  max-width: 840px;
+  margin: 24px auto;
+  text-align: left;
+}
+.recipe-builder-section > h2 { margin-bottom: 8px; color: #7c4a35; }
+.recipe-builder-subtitle { margin: 0 0 24px; color: #75675d; line-height: 1.5; }
+.recipe-builder-section .recipe-import-modern { background: #f1f5ed; border-color: #d9e2d3; }
+.recipe-import-label { display: block; margin-bottom: 8px; font-weight: 600; color: #55624d; }
+.recipe-builder-section .recipe-import-row input { min-width: 0; }
+.recipe-builder-section .recipe-import-row button { min-height: 44px; }
+.recipe-manual-divider { display: flex; align-items: center; gap: 14px; color: #75675d; font-size: 14px; }
+.recipe-manual-divider::before,
+.recipe-manual-divider::after { content: ""; height: 1px; background: #e7ddd5; flex: 1; }
+.recipe-manual-section,
+.recipe-builder-section .recipe-field { min-width: 0; }
+.recipe-manual-section h3 { margin: 0 0 16px; color: #55624d; font-size: 18px; }
+.recipe-manual-section h3 label { font: inherit; }
+.recipe-builder-section .category-section { margin-top: 20px; }
+.recipe-builder-section .category-chip { position: relative; display: inline-flex; align-items: center; min-height: 44px; }
+.recipe-builder-section .category-chip input {
+  display: block;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.recipe-builder-section .category-chip:focus-within,
+.recipe-builder-section button:focus-visible,
+.recipe-dietary-details > summary:focus-visible { outline: 2px solid #7c4a35; outline-offset: 3px; }
+.recipe-builder-section .recipe-details-fields { grid-template-columns: minmax(0, 1fr); gap: 28px; margin-top: 0; }
+.recipe-builder-section .recipe-details-fields > .recipe-manual-section { padding-top: 24px; border-top: 1px solid #e7ddd5; }
+.recipe-builder-section .ingredient-row { grid-template-columns: minmax(70px, 1fr) minmax(70px, 1fr) minmax(0, 3fr) auto; }
+.recipe-builder-section .ingredient-row input { min-height: 44px; }
+.recipe-builder-section .ingredient-row button,
+.recipe-builder-section .ingredient-builder > button { min-height: 44px; }
+.recipe-builder-section .ingredient-builder > button { align-self: flex-start; }
+.recipe-dietary-details { min-width: 0; border-top: 1px solid #e7ddd5; padding-top: 16px; }
+.recipe-dietary-details > summary { cursor: pointer; padding: 12px 0; color: #55624d; font-size: 18px; font-weight: 600; line-height: 1.5; }
+.recipe-tag-count { display: inline-block; margin-left: 10px; padding: 2px 8px; border-radius: 999px; background: #eef2ea; font-size: 13px; font-weight: 400; }
+.recipe-dietary-details .recipe-dietary-tags { padding-top: 12px; }
+.recipe-dietary-details .helper-text { flex-basis: 100%; margin: 0 0 8px; color: #75675d; line-height: 1.5; }
+.recipe-builder-section .diet-option { min-height: 44px; transition: none; }
+.recipe-builder-section .diet-option.selected { transform: none; }
+.recipe-form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-top: 8px; }
+.recipe-form-actions .recipe-save-button { flex: 1; width: auto; min-width: 180px; min-height: 46px; margin: 0; }
+.recipe-form-actions .small-button { min-height: 44px; }
+@media (max-width: 700px) {
+  .recipe-builder-section { padding: 20px 16px; }
+  .recipe-builder-section .recipe-import-modern { padding: 16px; }
+  .recipe-builder-section .recipe-form-row { grid-template-columns: minmax(0, 1fr); }
+  .recipe-builder-section .ingredient-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .recipe-builder-section .ingredient-row > label:nth-child(3) { grid-column: 1 / -1; }
+  .recipe-builder-section .ingredient-row > button { grid-column: 1 / -1; justify-self: start; }
+  .recipe-form-actions { flex-direction: column; align-items: stretch; }
+  .recipe-form-actions .recipe-save-button { width: 100%; min-width: 0; }
+}

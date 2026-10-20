@@ -1996,7 +1996,7 @@ test('owned Edit opens and scrolls the populated Add Recipe form; Cancel restore
   clickButton(app, 'Cancel Edit')
   assertCleanDraft(app)
   assert.equal(app.state.activeTab, 'add-recipe')
-  assert.equal(app.nodes(recipeBuilder(app)).find(node => node.type === 'h2').props.children[0], 'Add Recipe')
+  assert.equal(app.nodes(recipeBuilder(app)).find(node => node.type === 'h2').props.children[0], 'Add a Recipe')
 })
 
 test('successful creation returns to an unfiltered Recipes library without reloading', async () => {

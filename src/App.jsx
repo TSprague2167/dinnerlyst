@@ -1512,18 +1512,21 @@ if (!saved || !ownsAccount(owner)) return
 
 
       <section ref={recipeBuilderRef} className="card recipe-builder-section" hidden={activeTab !== "add-recipe"}>
-        <h2>{editingRecipeId ? "Edit Recipe" : "Add Recipe"}</h2>
+        <h2>{editingRecipeId ? "Edit Recipe" : "Add a Recipe"}</h2>
+        <p className="recipe-builder-subtitle">Import a recipe link or add your own below.</p>
 
   <fieldset className="form recipe-form-modern" disabled={recipeSaving || importing} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
 
   <div className="recipe-import-modern">
     <div>
-      <h3>Import from a recipe link</h3>
-      <p>Paste a URL and Dinnerlyst will pull in the recipe details.</p>
+      <h3>Import from URL</h3>
+      <p>Have a recipe link? Start here.</p>
     </div>
 
+    <label className="recipe-import-label" htmlFor="recipe-import-url">Recipe URL</label>
     <div className="recipe-import-row">
       <input
+        id="recipe-import-url"
         type="url"
         placeholder="Paste recipe URL"
         value={recipeUrl}
@@ -1540,10 +1543,15 @@ if (!saved || !ownsAccount(owner)) return
     </div>
   </div>
 
+  <div className="recipe-manual-divider"><span>or add manually</span></div>
+
+  <div className="recipe-manual-section" role="group" aria-labelledby="recipe-basics-heading">
+  <h3 id="recipe-basics-heading">Recipe Basics</h3>
   <div className="recipe-form-row">
     <div className="recipe-field">
-      <label>Recipe name</label>
+      <label htmlFor="recipe-name">Recipe name</label>
       <input
+        id="recipe-name"
         type="text"
         placeholder="Recipe name"
         value={recipeName}
@@ -1552,8 +1560,9 @@ if (!saved || !ownsAccount(owner)) return
     </div>
 
     <div className="recipe-field">
-      <label>Recipe photo</label>
+      <label htmlFor="recipe-photo">Recipe photo</label>
       <input
+        id="recipe-photo"
         type="file"
         key={`${userId}:${accountGeneration}:${recipeFormGeneration}`}
         accept="image/*"
@@ -1563,9 +1572,9 @@ if (!saved || !ownsAccount(owner)) return
   </div>
 
   <div className="category-section">
-    <label className="field-label">Categories</label>
+    <span className="field-label" id="recipe-categories-label">Categories</span>
 
-    <div className="category-chips">
+    <div className="category-chips" role="group" aria-labelledby="recipe-categories-label">
       {[
         "Chicken",
         "Beef",
@@ -1605,9 +1614,11 @@ if (!saved || !ownsAccount(owner)) return
   </div>
    
 
+  </div>
+
          <div className="recipe-details-fields">
-  <div className="recipe-field ingredient-builder">
-    <label>Ingredients</label>
+  <div className="recipe-field ingredient-builder recipe-manual-section" role="group" aria-labelledby="recipe-ingredients-heading">
+    <h3 id="recipe-ingredients-heading">Ingredients</h3>
     {ingredientRows.map((row, index) => (
       <div className="ingredient-row" key={index}>
         {["amount", "unit", "ingredient"].map((field) => (
@@ -1639,21 +1650,24 @@ if (!saved || !ownsAccount(owner)) return
     </button>
   </div>
 
-  <div className="recipe-field">
-    <label>Instructions</label>
+  <div className="recipe-field recipe-manual-section">
+    <h3><label htmlFor="recipe-instructions">Instructions</label></h3>
     <textarea
+      id="recipe-instructions"
       placeholder="Recipe instructions"
       value={instructions}
       onChange={(e) => setInstructions(e.target.value)}
       rows="6"
     />
   </div>
+  <details className="recipe-dietary-details" key={recipeFormGeneration}>
+    <summary>Dietary tags &amp; restrictions{dietTags.length > 0 && <span className="recipe-tag-count">{dietTags.length} selected</span>}</summary>
   <div className="recipe-field recipe-dietary-tags">
-  <label>Dietary tags</label>
   <p className="helper-text">Lifestyle tags are optional for your recipes. Add matching tags for any selected dietary requirements or food restrictions so they can be included in meal plans.</p>
   <button
   type="button"
   className={dietTags.includes("High Protein") ? "diet-option selected" : "diet-option"}
+  aria-pressed={dietTags.includes("High Protein")}
   onClick={() =>
     setDietTags(
       dietTags.includes("High Protein")
@@ -1667,6 +1681,7 @@ if (!saved || !ownsAccount(owner)) return
 <button
   type="button"
   className={dietTags.includes("Anti-Inflammatory") ? "diet-option selected" : "diet-option"}
+  aria-pressed={dietTags.includes("Anti-Inflammatory")}
   onClick={() =>
     setDietTags(
       dietTags.includes("Anti-Inflammatory")
@@ -1680,6 +1695,7 @@ if (!saved || !ownsAccount(owner)) return
 <button
   type="button"
   className={dietTags.includes("Vegetarian") ? "diet-option selected" : "diet-option"}
+  aria-pressed={dietTags.includes("Vegetarian")}
   onClick={() =>
     setDietTags(
       dietTags.includes("Vegetarian")
@@ -1693,6 +1709,7 @@ if (!saved || !ownsAccount(owner)) return
 <button
   type="button"
   className={dietTags.includes("Vegan") ? "diet-option selected" : "diet-option"}
+  aria-pressed={dietTags.includes("Vegan")}
   onClick={() =>
     setDietTags(
       dietTags.includes("Vegan")
@@ -1706,6 +1723,7 @@ if (!saved || !ownsAccount(owner)) return
 <button
   type="button"
   className={dietTags.includes("Gluten-Free") ? "diet-option selected" : "diet-option"}
+  aria-pressed={dietTags.includes("Gluten-Free")}
   onClick={() =>
     setDietTags(
       dietTags.includes("Gluten-Free")
@@ -1720,6 +1738,7 @@ if (!saved || !ownsAccount(owner)) return
 <button
   type="button"
   className={dietTags.includes("Dairy-Free") ? "diet-option selected" : "diet-option"}
+  aria-pressed={dietTags.includes("Dairy-Free")}
   onClick={() =>
     setDietTags(
       dietTags.includes("Dairy-Free")
@@ -1734,6 +1753,7 @@ if (!saved || !ownsAccount(owner)) return
 <button
   type="button"
   className={dietTags.includes("Low Carb") ? "diet-option selected" : "diet-option"}
+  aria-pressed={dietTags.includes("Low Carb")}
   onClick={() =>
     setDietTags(
       dietTags.includes("Low Carb")
@@ -1748,6 +1768,7 @@ if (!saved || !ownsAccount(owner)) return
 <button
   type="button"
   className={dietTags.includes("Keto") ? "diet-option selected" : "diet-option"}
+  aria-pressed={dietTags.includes("Keto")}
   onClick={() =>
     setDietTags(
       dietTags.includes("Keto")
@@ -1762,6 +1783,7 @@ if (!saved || !ownsAccount(owner)) return
 <button
   type="button"
   className={dietTags.includes("Mediterranean") ? "diet-option selected" : "diet-option"}
+  aria-pressed={dietTags.includes("Mediterranean")}
   onClick={() =>
     setDietTags(
       dietTags.includes("Mediterranean")
@@ -1775,6 +1797,7 @@ if (!saved || !ownsAccount(owner)) return
 <button
   type="button"
   className={dietTags.includes("Peanut-Free") ? "diet-option selected" : "diet-option"}
+  aria-pressed={dietTags.includes("Peanut-Free")}
   onClick={() =>
     setDietTags(
       dietTags.includes("Peanut-Free")
@@ -1789,6 +1812,7 @@ if (!saved || !ownsAccount(owner)) return
 <button
   type="button"
   className={dietTags.includes("Tree Nut-Free") ? "diet-option selected" : "diet-option"}
+  aria-pressed={dietTags.includes("Tree Nut-Free")}
   onClick={() =>
     setDietTags(
       dietTags.includes("Tree Nut-Free")
@@ -1803,6 +1827,7 @@ if (!saved || !ownsAccount(owner)) return
 <button
   type="button"
   className={dietTags.includes("Shellfish-Free") ? "diet-option selected" : "diet-option"}
+  aria-pressed={dietTags.includes("Shellfish-Free")}
   onClick={() =>
     setDietTags(
       dietTags.includes("Shellfish-Free")
@@ -1817,6 +1842,7 @@ if (!saved || !ownsAccount(owner)) return
 <button
   type="button"
   className={dietTags.includes("Egg-Free") ? "diet-option selected" : "diet-option"}
+  aria-pressed={dietTags.includes("Egg-Free")}
   onClick={() =>
     setDietTags(
       dietTags.includes("Egg-Free")
@@ -1831,6 +1857,7 @@ if (!saved || !ownsAccount(owner)) return
 <button
   type="button"
   className={dietTags.includes("Soy-Free") ? "diet-option selected" : "diet-option"}
+  aria-pressed={dietTags.includes("Soy-Free")}
   onClick={() =>
     setDietTags(
       dietTags.includes("Soy-Free")
@@ -1842,8 +1869,10 @@ if (!saved || !ownsAccount(owner)) return
   🌱 Soy-Free
 </button>
 </div>
+  </details>
 </div>
 
+<div className="recipe-form-actions">
 <button
   className="primary-button recipe-save-button"
   onClick={addRecipe}
@@ -1853,6 +1882,7 @@ if (!saved || !ownsAccount(owner)) return
 {editingRecipeId && (
   <button type="button" className="small-button" onClick={cancelRecipeEdit}>Cancel Edit</button>
 )}
+</div>
 {recipeSaving && <p role="status">Saving your recipe…</p>}
 {importing && <p role="status">Importing…</p>}
         </fieldset>
