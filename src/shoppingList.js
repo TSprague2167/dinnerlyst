@@ -48,6 +48,58 @@ export function shoppingCheckIdentities(item) {
   const entry = asShoppingItem(item)
   return [...new Set([entry.key, ...(entry.legacyGroups || []).flat()])]
 }
+// Removal identities are separate from quantity-sensitive checked-item keys.
+export function shoppingRemovalKey(value) {
+  const item = asShoppingItem(value)
+  if (item.extra || !item.generated) return JSON.stringify(['extra', item.key])
+  if (item.key.startsWith('shopping:v1:')) {
+    try {
+      const parts = JSON.parse(item.key.slice('shopping:v1:'.length))
+      if (Array.isArray(parts) && parts.length === 3 && parts.every(part => typeof part === 'string')) {
+        return JSON.stringify(['structured', parts[0], parts[1]])
+      }
+    } catch { /* A legacy key remains exact rather than guessed. */ }
+  }
+  return JSON.stringify(['legacy', item.legacyGroups?.[0]?.[0] ?? item.key])
+}
+export function isShoppingItemVisible(value) {
+  const item = asShoppingItem(value)
+  return !item.pantryHidden && !item.userRemoved
+}
+function mapShoppingItems(list, transform) {
+  return Object.fromEntries(Object.entries(list).map(([category, entries]) => [category, entries.map(item => transform(asShoppingItem(item)))]))
+}
+export function removeShoppingItem(list, value) {
+  const identity = shoppingRemovalKey(value)
+  return mapShoppingItems(list, item => shoppingRemovalKey(item) === identity ? { ...item, userRemoved: true } : item)
+}
+function clearShoppingRemoval(item) {
+  const restored = { ...item }
+  delete restored.userRemoved
+  return restored
+}
+export function restoreRemovedShoppingItems(list, meals, pantryNames = []) {
+  return rebuildShoppingList(mapShoppingItems(list, clearShoppingRemoval), meals, meals, pantryNames)
+}
+function itemHasSource(item, source) {
+  return item.label === source || (item.generated && item.legacyGroups?.some(group => group[0] === source))
+}
+export function shoppingContainsIngredient(list, source) {
+  return Object.values(list).flat().some(value => isShoppingItemVisible(value) && itemHasSource(asShoppingItem(value), source))
+}
+export function addMissingShoppingItems(list, missingIngredients, meals, pantryNames = []) {
+  const removed = new Set(Object.values(list).flat().map(asShoppingItem)
+    .filter(item => item.userRemoved && missingIngredients.some(source => itemHasSource(item, source)))
+    .map(shoppingRemovalKey))
+  const restored = removed.size ? rebuildShoppingList(mapShoppingItems(list, item =>
+    removed.has(shoppingRemovalKey(item)) ? clearShoppingRemoval(item) : item), meals, meals, pantryNames) : list
+  const result = { ...restored, Other: [...(restored.Other || [])] }
+  for (const source of missingIngredients) {
+    if (!shoppingContainsIngredient(result, source)) result.Other.push({ ...asShoppingItem(source), extra: true })
+  }
+  return result
+}
+
 export function buildShoppingList(meals, pantryNames = []) {
   const groups = new Map()
   const oldCounts = new Map()
@@ -106,6 +158,10 @@ export function refreshWeeklyMeals(meals, recipes) {
 }
 
 export function rebuildShoppingList(previous, oldMeals, refreshedMeals, pantryNames = []) {
+  const priorItems = Object.values(previous || {}).flat().map(asShoppingItem)
+  const removed = new Set(priorItems.filter(item => item.userRemoved).map(shoppingRemovalKey))
+  const applyRemovals = list => mapShoppingItems(list, item =>
+    removed.has(shoppingRemovalKey(item)) ? { ...item, userRemoved: true } : item)
   const oldGenerated = Object.values(buildShoppingList(oldMeals)).flat()
   const oldLabels = new Set(oldGenerated.map(item => item.label))
   const result = buildShoppingList(refreshedMeals)
@@ -127,14 +183,21 @@ export function rebuildShoppingList(previous, oldMeals, refreshedMeals, pantryNa
       const item = asShoppingItem(value)
       // Old lists have no provenance. Only remove exact reconstructed generated
       // labels; retain all unknown items to avoid losing manually added groceries.
-      if (item.extra || (!item.generated && !oldLabels.has(item.label))) {
+      if (item.userRemoved) {
+        // Keep a marker even when no current recipe needs this ingredient.
+        // A changed aggregate quantity can reuse the marker's removal identity.
+        const represented = Object.values(result).flat().some(entry => shoppingRemovalKey(entry) === shoppingRemovalKey(item))
+        if (!represented) {
+          if (!result[category]) result[category] = []
+          result[category].push(item)
+        }
+      } else if (item.extra || (!item.generated && !oldLabels.has(item.label))) {
         if (!result[category]) result[category] = []
         if (!result[category].some(entry => entry.key === item.key)) result[category].push(item)
       }
     }
   }
   // Carry compatibility aliases across later refreshes of the same quantity.
-  const priorItems = Object.values(previous || {}).flat().map(asShoppingItem)
   for (const item of newItems) {
     const prior = priorItems.find(entry => entry.key === item.key)
     if (prior?.legacyGroups) {
@@ -142,7 +205,7 @@ export function rebuildShoppingList(previous, oldMeals, refreshedMeals, pantryNa
         [...new Set([...group, ...(prior.legacyGroups[index] || [])])])
     }
   }
-  if (!pantryNames.length) return result
+  if (!pantryNames.length) return applyRemovals(result)
   const visible = buildShoppingList(refreshedMeals, pantryNames)
   const visibleByKey = new Map(Object.values(visible).flat().map(item => [item.key, item]))
   for (const [category, entries] of Object.entries(result)) {
@@ -159,5 +222,5 @@ export function rebuildShoppingList(previous, oldMeals, refreshedMeals, pantryNa
       }
     }
   }
-  return visible
+  return applyRemovals(visible)
 }

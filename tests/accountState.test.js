@@ -2053,3 +2053,124 @@ test('confirmed creation with failed list refresh returns to Recipes and Retry r
   assert.ok(app.nodes().some(node => node.props?.className === 'recipe-card' && nodeText(node).includes('New supper')))
   assert.equal(app.reloads, 0)
 })
+
+const shoppingRows = app => app.nodes().filter(node => node.props?.className === 'shopping-item')
+const shoppingRow = (app, label) => shoppingRows(app).find(row => app.nodes(row).some(node => node.props?.className === 'shopping-item-label' && nodeText(node) === label))
+function trashShoppingRow(app, label) {
+  const row = shoppingRow(app, label)
+  assert.ok(row, label)
+  const button = app.nodes(row).find(node => node.props?.className === 'shopping-remove')
+  assert.equal(button.props.type, 'button')
+  assert.equal(button.props['aria-label'], `Remove ${label} from shopping list`)
+  button.props.onClick(); app.flush()
+}
+const removalRecipe = (id, amount = '3') => ({ ...recipe(id, `Garlic supper ${id}`), user_id: 'A',
+  structured_ingredients: [{ amount, unit: 'cloves', ingredient: 'garlic' }, { amount: '1', unit: 'cup', ingredient: 'rice' }] })
+async function removalApp() {
+  const first = removalRecipe(901), second = removalRecipe(902, '7')
+  return bestApp({ library: [first, second], meals: [{ day: 'Thursday', meal: first }],
+    shoppingList: { Other: [{ key: 'Bread', label: 'Bread', extra: true, legacyGroups: [['Bread']] }] } })
+}
+
+test('trash hides generated and extra rows from shopping/progress, preserves checks, and Restore recovers them', async () => {
+  const app = await removalApp(); clickButton(app, '🛒 Shop')
+  const checking = app.nodes(shoppingRow(app, 'garlic — 3 cloves')).find(node => node.props?.type === 'checkbox').props.onChange({ target: { checked: true } })
+  await app.pump(); latestRequest(app, 'checked_shopping_items', 'insert').resolve({ error: null }); await checking; await app.pump()
+  const checked = [...app.state.checkedShoppingItems]
+  const requestsBefore = app.requests.length
+  const beforeRecipe = structuredClone(app.state.recipes)
+  trashShoppingRow(app, 'garlic — 3 cloves'); trashShoppingRow(app, 'Bread')
+  assert.equal(shoppingRows(app).length, 1)
+  assert.equal(app.nodes().find(node => node.type === 'p' && node.props.children[0] === 'Checked items: ').props.children[1], 0)
+  assert.deepEqual(app.state.checkedShoppingItems, checked)
+  assert.deepEqual(app.state.recipes, beforeRecipe)
+  assert.equal(app.requests.length, requestsBefore, 'removal never deletes checked records or recipes')
+  assert.equal(Object.values(app.state.shoppingList).flat().filter(item => item.userRemoved).length, 2)
+  assertPlannerCacheMatches(app)
+  clickButton(app, '🍽 Plan')
+  assert.deepEqual(app.nodes().find(node => node.type === 'p' && nodeText(node).includes('items checked')).props.children.filter(value => typeof value === 'number'), [0, 1])
+  clickButton(app, '🛒 Shop'); clickButton(app, 'Restore removed items')
+  assert.equal(shoppingRows(app).length, 3)
+  assert.equal(app.nodes(shoppingRow(app, 'garlic — 3 cloves')).find(node => node.props?.type === 'checkbox').props.checked, true)
+  assert.equal(app.nodes().find(node => node.type === 'p' && node.props.children[0] === 'Checked items: ').props.children[1], 1)
+  assert.equal(nodeText(app.nodes()).includes('Restore removed items'), false)
+  assert.equal(app.requests.length, requestsBefore)
+  assertPlannerCacheMatches(app)
+})
+
+test('UI removals survive Regenerate/Generate quantity changes and full cache reload', async () => {
+  const app = await removalApp(); clickButton(app, '🛒 Shop'); trashShoppingRow(app, 'garlic — 3 cloves')
+  app.state.regenerateMeal('Thursday'); app.flush()
+  assert.equal(shoppingRows(app).some(row => nodeText(row).includes('garlic')), false)
+  assert.ok(Object.values(app.state.shoppingList).flat().some(item => item.label === 'garlic — 7 cloves' && item.userRemoved))
+  app.state.generateWeeklyMeals(); app.flush()
+  assert.ok(Object.values(app.state.shoppingList).flat().some(item => item.label === 'garlic — 10 cloves' && item.userRemoved))
+  assertPlannerCacheMatches(app)
+  const reloaded = appHarness(app.storage); await reloaded.ready('A', [removalRecipe(901), removalRecipe(902, '7')])
+  clickButton(reloaded, '🛒 Shop')
+  assert.equal(shoppingRows(reloaded).some(row => nodeText(row).includes('garlic')), false)
+  assert.ok(shoppingRow(reloaded, 'Bread'))
+  assert.ok(shoppingRow(reloaded, '2 cup rice'))
+  clickButton(reloaded, 'Restore removed items')
+  assert.ok(shoppingRow(reloaded, 'garlic — 10 cloves'))
+  assertPlannerCacheMatches(reloaded)
+})
+
+test('shopping removals and stale trash/restore callbacks stay isolated across accounts and logout', async () => {
+  const app = await removalApp(); clickButton(app, '🛒 Shop')
+  const staleTrash = app.nodes(shoppingRow(app, 'Bread')).find(node => node.props?.className === 'shopping-remove').props.onClick
+  trashShoppingRow(app, 'garlic — 3 cloves')
+  const staleRestore = app.nodes().find(node => node.type === 'button' && nodeText(node) === 'Restore removed items').props.onClick
+  const bOwner = { userId: 'B', generation: 1 }, bRecipe = { ...removalRecipe(903), user_id: 'B' }
+  account.persistPlannerCache(app.storage, bOwner, bOwner, { weeklyMeals: [{ day: 'Thursday', meal: bRecipe }], shoppingList: {}, lockedDays: [] })
+  await app.ready('B', [bRecipe]); clickButton(app, '🛒 Shop')
+  const before = structuredClone(app.state.shoppingList)
+  staleTrash(); staleRestore(); app.flush()
+  assert.deepEqual(app.state.shoppingList, before)
+  assert.ok(shoppingRow(app, 'garlic — 3 cloves'))
+  assert.equal(Object.values(app.state.shoppingList).flat().some(item => item.userRemoved), false)
+  app.emit(null)
+  assert.deepEqual(app.state.shoppingList, {})
+  await app.ready('A', [removalRecipe(901), removalRecipe(902, '7')]); clickButton(app, '🛒 Shop')
+  assert.equal(shoppingRow(app, 'garlic — 3 cloves'), undefined)
+  assert.ok(shoppingRow(app, 'Bread'))
+  assertPlannerCacheMatches(app)
+})
+
+test('late checkbox success cannot resurrect a removed row and Restore retains its completed checked state', async () => {
+  const app = await removalApp(); clickButton(app, '🛒 Shop')
+  const checking = app.nodes(shoppingRow(app, 'garlic — 3 cloves')).find(node => node.props?.type === 'checkbox').props.onChange({ target: { checked: true } })
+  await app.pump()
+  trashShoppingRow(app, 'garlic — 3 cloves')
+  latestRequest(app, 'checked_shopping_items', 'insert').resolve({ error: null }); await checking; await app.pump()
+  assert.equal(shoppingRow(app, 'garlic — 3 cloves'), undefined)
+  assert.equal(app.nodes().find(node => node.type === 'p' && node.props.children[0] === 'Checked items: ').props.children[1], 0)
+  assert.equal(app.requests.some(req => req.table === 'checked_shopping_items' && req.method === 'delete'), false)
+  clickButton(app, 'Restore removed items')
+  assert.equal(app.nodes(shoppingRow(app, 'garlic — 3 cloves')).find(node => node.props?.type === 'checkbox').props.checked, true)
+})
+
+test('Pantry Add Missing explicitly restores removed extras or generated ingredients without duplicates or opening a modal', async () => {
+  for (const planned of [false, true]) {
+    const target = bestRecipe(904, 'Egg bread supper', ['Eggs', 'Bread'])
+    const app = await bestApp({ library: [target], meals: planned ? [{ day: 'Thursday', meal: target }] : [], pantryNames: ['Eggs'] })
+    const addMissing = () => {
+      clickButton(app, '🥫 Pantry')
+      const card = app.nodes().find(node => node.props?.className === 'pantry-match-card' && nodeText(node).includes('Egg bread supper'))
+      let stopped = false
+      app.nodes(card).find(node => node.type === 'button' && nodeText(node).includes('Shopping List')).props.onClick({ stopPropagation() { stopped = true } }); app.flush()
+      assert.equal(stopped, true)
+      assert.equal(detailModals(app).length, 0)
+    }
+    if (!planned) addMissing()
+    clickButton(app, '🛒 Shop'); trashShoppingRow(app, planned ? 'bread (1)' : 'Bread')
+    addMissing()
+    assert.ok(nodeText(app.nodes()).includes('✓ Added to Shopping List'))
+    addMissing()
+    assert.ok(nodeText(app.nodes()).includes('✓ Already on Shopping List'))
+    clickButton(app, '🛒 Shop')
+    assert.equal(shoppingRows(app).filter(row => nodeText(row).toLowerCase().includes('bread')).length, 1)
+    assert.deepEqual(app.state.pantryItems, ['Eggs'])
+    assertPlannerCacheMatches(app)
+  }
+})

@@ -3,7 +3,7 @@ import { supabase, initialAuthCallbackType } from './supabase'
 import './App.css'
 import { discardLegacyCaches, loadPlannerCache, persistPlannerCache, nextAccountOwner, isCurrentAccount } from './accountState'
 import { getPantryRecipeMatch } from './pantry'
-import { refreshWeeklyMeals, rebuildShoppingList, asShoppingItem, isShoppingItemChecked, shoppingCheckIdentities } from './shoppingList'
+import { refreshWeeklyMeals, rebuildShoppingList, asShoppingItem, isShoppingItemChecked, shoppingCheckIdentities, shoppingRemovalKey, isShoppingItemVisible, removeShoppingItem, restoreRemovedShoppingItems, addMissingShoppingItems, shoppingContainsIngredient } from './shoppingList'
 import { emptyIngredientRow, getIngredientRows, formatIngredient, rowsFromIngredientStrings, validateIngredientRows } from './ingredients'
 
 
@@ -127,7 +127,7 @@ const [onboardingAnswers, setOnboardingAnswers] = useState(defaultOnboardingAnsw
   const [recipeFormGeneration, setRecipeFormGeneration] = useState(0)
   const [selectedCategories, setSelectedCategories] = useState([])
 
-  const currentShoppingItems = Object.values(shoppingList).flat().filter((item) => !asShoppingItem(item).pantryHidden)
+  const currentShoppingItems = Object.values(shoppingList).flat().filter(isShoppingItemVisible)
   const checkedShoppingCount = currentShoppingItems.filter((item) =>
     isShoppingItemChecked(item, checkedShoppingItems)
   ).length
@@ -932,22 +932,24 @@ const pantryMatches = recipes
     .filter(recipe => recipe.totalCount > 0 && recipe.matchedCount / recipe.totalCount >= 0.5)
     .sort((a, b) => b.matchedCount - a.matchedCount)
   const addMissingToShoppingList = (missingIngredients) => {
-  setShoppingList((currentList) => {
-    const updatedList = { ...currentList }
-
-    if (!updatedList.Other) {
-      updatedList.Other = []
-    }
-
-    missingIngredients.forEach((ingredient) => {
-      if (!updatedList.Other.some((item) => asShoppingItem(item).label === ingredient)) {
-        updatedList.Other = [...updatedList.Other, { ...asShoppingItem(ingredient), extra: true }]
-      }
-    })
-
-    return updatedList
-  })
-}
+    const owner = plannerOwner
+    if (!owner?.userId || !ownsAccount(owner)) return
+    setShoppingList(previous => ownsAccount(owner)
+      ? addMissingShoppingItems(previous, missingIngredients, weeklyMealsRef.current,
+        pantrySnapshotRef.current.userId === owner.userId ? pantrySnapshotRef.current.items : []) : previous)
+  }
+  function removeShoppingEntry(ingredient) {
+    const owner = plannerOwner
+    if (!owner?.userId || !ownsAccount(owner)) return
+    setShoppingList(previous => ownsAccount(owner) ? removeShoppingItem(previous, ingredient) : previous)
+  }
+  function restoreShoppingEntries() {
+    const owner = plannerOwner
+    if (!owner?.userId || !ownsAccount(owner)) return
+    setShoppingList(previous => ownsAccount(owner)
+      ? restoreRemovedShoppingItems(previous, weeklyMealsRef.current,
+        pantrySnapshotRef.current.userId === owner.userId ? pantrySnapshotRef.current.items : []) : previous)
+  }
   async function completePasswordSetup() {
     const owner = plannerOwner
     if (!owner?.userId || !ownsAccount(owner) || !passwordSetupRequired || passwordSetupOperation.current) return
@@ -2102,7 +2104,7 @@ if (!saved || !ownsAccount(owner)) return
     onClick={() => {
       const match = pantryMatches[0]
       const alreadyPresent = match.missingIngredients.every(ingredient =>
-        (shoppingList.Other || []).some(item => asShoppingItem(item).label === ingredient)
+        shoppingContainsIngredient(shoppingList, ingredient)
       )
       addMissingToShoppingList(match.missingIngredients)
       setBestMatchFeedback({
@@ -2297,18 +2299,21 @@ if (!saved || !ownsAccount(owner)) return
           <h2>🛒Shopping List</h2>
           <p>Checked items: {checkedShoppingCount}</p>
           {renderCheckedStatus()}
+          {Object.values(shoppingList).flat().some(item => asShoppingItem(item).userRemoved) && (
+            <button type="button" className="small-button" onClick={restoreShoppingEntries}>Restore removed items</button>
+          )}
 
           {currentShoppingItems.length === 0 && <p className="empty">Your grocery list will appear here.</p>}
 
           {Object.entries(shoppingList).map(([category, entries]) => {
-  const items = entries.filter((item) => !asShoppingItem(item).pantryHidden)
+  const items = entries.filter(isShoppingItemVisible)
   return (
   items.length > 0 && (
     <div key={category}>
       <h3>{category}</h3>
 
-      {items.map((ingredient, index) => (
-        <div className="shopping-item" key={index}>
+      {items.map((ingredient) => (
+        <div className="shopping-item" key={shoppingRemovalKey(ingredient)}>
          <>
   <input
   type="checkbox"
@@ -2316,7 +2321,14 @@ if (!saved || !ownsAccount(owner)) return
   disabled={checkedLoad !== "ready" || checkedPending.includes(asShoppingItem(ingredient).key) || checkedReconcile.current}
   onChange={(e) => changeShoppingCheck(ingredient, e.target.checked)}
 />
-  {asShoppingItem(ingredient).label}
+  <span className="shopping-item-label">{asShoppingItem(ingredient).label}</span>
+  <button type="button" className="shopping-remove" title="Remove item"
+    aria-label={`Remove ${asShoppingItem(ingredient).label} from shopping list`}
+    onClick={() => removeShoppingEntry(ingredient)}>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true" focusable="false">
+      <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />
+    </svg>
+  </button>
 </> 
         </div>
       ))}
@@ -2437,7 +2449,7 @@ if (!saved || !ownsAccount(owner)) return
     onClick={(event) => {
       event.stopPropagation()
       const alreadyPresent = recipe.missingIngredients.every(ingredient =>
-        (shoppingList.Other || []).some(item => asShoppingItem(item).label === ingredient)
+        shoppingContainsIngredient(shoppingList, ingredient)
       )
       addMissingToShoppingList(recipe.missingIngredients)
       setPantryAddFeedback(previous => ({
