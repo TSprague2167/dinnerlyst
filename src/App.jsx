@@ -1473,7 +1473,7 @@ if (!saved || !ownsAccount(owner)) return
   )
 }
   return (
-    <div className="app">
+    <div className={`app signed-in-app ${activeTab === "planner" ? "plan-page" : ""}`}>
       <header className="hero app-header">
         <div className="app-brand">
           <h1>Dinnerlyst</h1>
@@ -1891,12 +1891,25 @@ if (!saved || !ownsAccount(owner)) return
       </section>
 
       {activeTab === "planner" && (
-      <section className="action-section">
+      <section className="action-section plan-intro" aria-labelledby="planning-title">
+        <div className="plan-intro-copy">
+          <p className="plan-eyebrow">A little planning. A lovely week.</p>
+          <h2 id="planning-title">Good food.<br />One less thing to think about.</h2>
+          <p className="plan-intro-description">Make room for the meals you look forward to. Your week of dinners and shopping list start here.</p>
         <button className="generate-button" onClick={generateWeeklyMeals}>
-          🍽️ Generate Weekly Meals + Shopping List
+          Generate My Meal Plan
         </button>
+        <p className="plan-intro-note">Seven days of inspiration. Shopping list included.</p>
+        </div>
+        {Boolean(weeklyMeals.find(item => item.meal?.image_url)?.meal || recipes.find(recipe => recipe.image_url)) && (
+          <div className="plan-intro-photo">
+            <img src={(weeklyMeals.find(item => item.meal?.image_url)?.meal || recipes.find(recipe => recipe.image_url)).image_url}
+              alt={(weeklyMeals.find(item => item.meal?.image_url)?.meal || recipes.find(recipe => recipe.image_url)).name} />
+            <span>From your recipe collection</span>
+          </div>
+        )}
         {planFeedback && (
-          <div role="status">
+          <div className="plan-feedback" role="status">
             <p>{planFeedback}</p>
             <button type="button" className="small-button" onClick={() => setActiveTab("recipes")}>View Recipes</button>
             <button type="button" className="small-button" onClick={() => setActiveTab("preferences")}>Review Preferences</button>
@@ -1908,7 +1921,7 @@ if (!saved || !ownsAccount(owner)) return
      {recipeNotice && <p role="status">{recipeNotice}</p>}
      {recipeLoad === "loading" && <p role="status">Loading recipes…</p>}
      {recipeLoad === "error" && <div role="alert"><p>Could not load recipes. Your existing recipes have been kept.</p><button className="small-button" onClick={() => getRecipes()}>Retry loading recipes</button></div>}
-     <main className="grid recipes-grid">
+     <main className={`grid recipes-grid ${activeTab === "planner" ? "plan-home" : ""}`}>
       {activeTab === "recipes" && (
         <section className="card">
           <h2>📖 Your Recipes ({recipes.length})</h2>
@@ -2051,90 +2064,10 @@ if (!saved || !ownsAccount(owner)) return
         
 
         {activeTab === "planner" && (
-<section className="card">
-<div className="planner-welcome">
-  <p className="planner-eyebrow">Good Evening 👋</p>
-  <h2>What’s for dinner tonight?</h2>
-  <p>Let Dinnerlyst help you make the easiest choice.</p>
-</div>
-<div className="best-match-card">
-  <p className="best-match-label">⭐ Tonight's Best Match</p>
-
-  <h3>
-  {pantryMatches[0]?.name || "No suitable recommendation right now"}
-</h3>
-
-  <div className="progress-bar">
-    <div
-  className="progress-fill"
-  style={{
-    width: `${pantryMatches[0] ? (pantryMatches[0].missingIngredients.length === 0 ? 100 : Math.min(pantryMatches[0].matchPercentage, 99)) : 0}%`
-  }}
-></div>
-  </div>
-
-  <p className="progress-text">
-  {pantryMatches[0]
-    ? pantryMatches[0].missingIngredients.length === 0
-      ? "🎉 100% Ready — You can make this!"
-      : `${Math.min(pantryMatches[0].matchPercentage, 99)}% Ready`
-    : "No match yet"}
-</p>
-
-  {pantryMatches[0]?.missingIngredients?.length > 0 && (
-  <p className="missing-title">Only missing:</p>
-)}
-
-  {pantryMatches[0]?.missingIngredients?.length > 0 ? (
-  <div>
-    {pantryMatches[0].missingIngredients.map((ingredient) => (
-      <p key={ingredient}>• {ingredient}</p>
-    ))}
-  </div>
-) : (
-  pantryMatches[0] ? (
-  <p>✅ You have everything you need!</p>
-) : (
-  <p>No recipe currently matches your preferences, restrictions, weekly plan, and pantry ingredients.</p>
-)
-)}
-  {pantryMatches[0]?.missingIngredients?.length > 0 && (
-  <button
-    className="cook-button"
-    onClick={() => {
-      const match = pantryMatches[0]
-      const alreadyPresent = match.missingIngredients.every(ingredient =>
-        shoppingContainsIngredient(shoppingList, ingredient)
-      )
-      addMissingToShoppingList(match.missingIngredients)
-      setBestMatchFeedback({
-        recipeId: match.id,
-        ingredients: JSON.stringify(match.missingIngredients),
-        message: alreadyPresent ? "✓ Already on Shopping List" : "✓ Added to Shopping List"
-      })
-    }}
-  >
-    🛒 Add Missing to Shopping List
-  </button>
-)}
-
-{pantryMatches[0]?.missingIngredients?.length > 0 &&
-  bestMatchFeedback?.recipeId === pantryMatches[0].id &&
-  bestMatchFeedback.ingredients === JSON.stringify(pantryMatches[0].missingIngredients) && (
-    <p role="status">{bestMatchFeedback.message}</p>
-)}
-
-{pantryMatches[0]?.missingIngredients?.length === 0 && (
-  <button
-    className="cook-button"
-    onClick={() => cookTonight(pantryMatches[0])}
-  >
-    Cook Tonight
-  </button>
-)}
-</div>
+<section className="card weekly-menu" aria-labelledby="weekly-menu-title">
   <div ref={weeklyResultsRef} className="section-header">
-  <h2>This Week</h2>
+  <p className="plan-eyebrow">Your table, all week</p>
+  <h2 id="weekly-menu-title">This Week’s Menu</h2>
   <p>Your planned meals at a glance.</p>
 </div>
 
@@ -2161,6 +2094,7 @@ if (!saved || !ownsAccount(owner)) return
 >
   <div className="meal-info">
     <span className="meal-day">{item.day}</span>
+   <div className="meal-media">
    {item.meal.image_url ? (
   <img
     src={item.meal.image_url}
@@ -2169,9 +2103,10 @@ if (!saved || !ownsAccount(owner)) return
   />
 ) : (
   <div className="meal-image-placeholder">
-    <span>🍽️</span>
+    <span aria-hidden="true">🍽️</span>
   </div>
 )}
+   </div>
    <button
   className="meal-title-button"
   type="button"
@@ -2261,8 +2196,91 @@ if (!saved || !ownsAccount(owner)) return
         </section>
         )}
         {activeTab === "planner" && (
+          <section className="card plan-best-match" aria-label="Tonight's Best Match">
+            <p className="plan-eyebrow">Make the most of what you have</p>
+<div className="best-match-card">
+  <p className="best-match-label">Tonight’s Best Match</p>
+
+  <h3>
+  {pantryMatches[0]?.name || "No suitable recommendation right now"}
+</h3>
+
+  <div className="progress-bar">
+    <div
+  className="progress-fill"
+  style={{
+    width: `${pantryMatches[0] ? (pantryMatches[0].missingIngredients.length === 0 ? 100 : Math.min(pantryMatches[0].matchPercentage, 99)) : 0}%`
+  }}
+></div>
+  </div>
+
+  <p className="progress-text">
+  {pantryMatches[0]
+    ? pantryMatches[0].missingIngredients.length === 0
+      ? "🎉 100% Ready — You can make this!"
+      : `${Math.min(pantryMatches[0].matchPercentage, 99)}% Ready`
+    : "No match yet"}
+</p>
+
+  {pantryMatches[0]?.missingIngredients?.length > 0 && (
+  <p className="missing-title">Only missing:</p>
+)}
+
+  {pantryMatches[0]?.missingIngredients?.length > 0 ? (
+  <div>
+    {pantryMatches[0].missingIngredients.map((ingredient) => (
+      <p key={ingredient}>• {ingredient}</p>
+    ))}
+  </div>
+) : (
+  pantryMatches[0] ? (
+  <p>✅ You have everything you need!</p>
+) : (
+  <p>No recipe currently matches your preferences, restrictions, weekly plan, and pantry ingredients.</p>
+)
+)}
+  {pantryMatches[0]?.missingIngredients?.length > 0 && (
+  <button
+    className="cook-button"
+    onClick={() => {
+      const match = pantryMatches[0]
+      const alreadyPresent = match.missingIngredients.every(ingredient =>
+        shoppingContainsIngredient(shoppingList, ingredient)
+      )
+      addMissingToShoppingList(match.missingIngredients)
+      setBestMatchFeedback({
+        recipeId: match.id,
+        ingredients: JSON.stringify(match.missingIngredients),
+        message: alreadyPresent ? "✓ Already on Shopping List" : "✓ Added to Shopping List"
+      })
+    }}
+  >
+    🛒 Add Missing to Shopping List
+  </button>
+)}
+
+{pantryMatches[0]?.missingIngredients?.length > 0 &&
+  bestMatchFeedback?.recipeId === pantryMatches[0].id &&
+  bestMatchFeedback.ingredients === JSON.stringify(pantryMatches[0].missingIngredients) && (
+    <p role="status">{bestMatchFeedback.message}</p>
+)}
+
+{pantryMatches[0]?.missingIngredients?.length === 0 && (
+  <button
+    className="cook-button"
+    onClick={() => cookTonight(pantryMatches[0])}
+  >
+    Cook Tonight
+  </button>
+)}
+</div>
+
+          </section>
+        )}
+        {activeTab === "planner" && (
   <section className="card shopping-progress-card">
-    <h2>🛒 Shopping Progress</h2>
+    <p className="plan-eyebrow">A little closer to dinner</p>
+    <h2>Shopping Progress</h2>
     {renderCheckedStatus()}
 
     <p>

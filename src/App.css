@@ -1382,3 +1382,134 @@ select:focus {
 }
 .shopping-item .shopping-remove:hover { background: #f6eee7; }
 .shopping-item .shopping-remove:focus-visible { outline: 2px solid #7c4a35; outline-offset: 3px; }
+
+/* Dinnerlyst 2.0 Phase 1: signed-in chrome and Plan only. */
+.signed-in-app .app-header {
+  grid-template-areas: "brand controls" "nav nav";
+  gap: 16px 24px; padding: 18px 22px; border-radius: 20px;
+  background: #fffdf8; border-color: #e5dfd2; box-shadow: 0 3px 16px #343f3010;
+}
+.signed-in-app .app-header h1 { font-family: Georgia, 'Times New Roman', serif; font-size: 34px; letter-spacing: -1.6px; color: #294d3c; }
+.signed-in-app .app-header .app-brand p { font-size: 13px; margin-top: 4px; }
+.signed-in-app .app-header .hero-stats { display: none; }
+.signed-in-app .app-header .header-controls button { min-height: 44px; color: #405448; border-color: #dddccd; }
+.signed-in-app .app-header .tab-nav { margin: 0; padding-top: 12px; gap: 6px; }
+.signed-in-app .app-header .tab-nav button { min-height: 44px; background: transparent; color: #405448; }
+.signed-in-app .app-header .tab-nav button:hover { background: #edf0e6; }
+.signed-in-app .app-header .tab-nav button[aria-current="page"] { background: #294d3c; border-color: #294d3c; color: #fffdf8; box-shadow: none; }
+#root:has(> .plan-page) { width: 1320px; border: 0; background: #faf7ef; }
+.app.plan-page { --plan-green: #294d3c; --plan-ink: #293a30; --plan-muted: #686c60; width: 100%; padding: 28px 36px 48px; color: var(--plan-ink); background: #faf7ef; text-align: left; }
+.plan-page .plan-eyebrow { font: 600 11px/1.5 Arial, sans-serif; letter-spacing: .13em; text-transform: uppercase; color: #63735d; margin: 0 0 10px; }
+.plan-page .plan-intro { display: grid; grid-template-columns: 1.35fr 1fr; gap: 32px; align-items: center; margin: 28px 0 32px; }
+.plan-page .plan-intro-copy { padding: 8px 0; }
+.plan-page .plan-intro h2 { font: 400 clamp(30px, 3.4vw, 46px)/1.13 Georgia, 'Times New Roman', serif; letter-spacing: -1.2px; color: var(--plan-ink); margin: 0 0 14px; }
+.plan-page .plan-intro-description { max-width: 490px; font-size: 15px; line-height: 1.65; color: var(--plan-muted); margin-bottom: 20px; }
+.plan-page .generate-button { width: auto; min-height: 48px; padding: 15px 26px; background: var(--plan-green); border-radius: 12px; font-size: 16px; font-weight: 600; box-shadow: 0 5px 12px #294d3c15; }
+.plan-page .generate-button:hover { background: #1e3e2e; transform: none; }
+.plan-page .plan-intro-note { font-size: 12px; margin-top: 10px; color: var(--plan-muted); }
+.plan-page .plan-intro-photo { position: relative; height: 255px; border-radius: 24px; overflow: hidden; background: #e8e7db; }
+.plan-page .plan-intro-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.plan-page .plan-intro-photo span { position: absolute; bottom: 14px; left: 14px; background: #fffdf8f2; color: #405448; padding: 7px 12px; border-radius: 20px; font-size: 11px; }
+.plan-page .plan-feedback { grid-column: 1 / -1; background: #f0eee1; border: 1px solid #dcd9c9; border-radius: 14px; padding: 16px; font-size: 14px; line-height: 1.6; }
+.plan-page .plan-feedback button { margin: 10px 8px 0 0; }
+.plan-page .plan-home { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 22px; }
+.plan-page .plan-home > .card { min-width: 0; margin: 0; border: 1px solid #e6e1d5; background: #fffdf8; border-radius: 22px; padding: 24px; box-shadow: 0 4px 18px #343f3008; }
+.plan-page .plan-home > .weekly-menu { grid-column: 1 / -1; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.plan-page .section-header { margin: 0 0 20px; scroll-margin-top: 20px; }
+.plan-page .section-header h2, .plan-page .shopping-progress-card h2 { font: 400 30px/1.2 Georgia, 'Times New Roman', serif; letter-spacing: -.6px; color: var(--plan-ink); }
+.plan-page .section-header > p:last-child { color: var(--plan-muted); font-size: 14px; margin-top: 6px; }
+.plan-page .meal-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.plan-page .meal-grid .meal-card { padding: 14px; margin: 0; border: 1px solid #e5e1d5; border-radius: 20px; background: #fffdf8; box-shadow: 0 3px 14px #343f3008; min-width: 0; overflow-wrap: anywhere; }
+.plan-page .meal-grid .meal-card:hover { box-shadow: 0 8px 22px #343f3012; }
+.plan-page .meal-info { margin: 0 0 16px; }
+.plan-page .meal-day { font-size: 11px; letter-spacing: .12em; color: #59705a; margin: 2px 2px 10px; }
+.plan-page .meal-image, .plan-page .meal-image-placeholder { width: 100%; height: auto; aspect-ratio: 1.55; object-fit: cover; border-radius: 12px; margin: 0 0 14px; display: block; }
+.plan-page .meal-image-placeholder { display: grid; place-items: center; background: #eeeee3; color: #5d715b; font-size: 28px; }
+.plan-page .meal-card:hover .meal-image { transform: none; }
+.plan-page .meal-title-button { font: 400 23px/1.2 Georgia, 'Times New Roman', serif; text-align: left; color: var(--plan-ink); }
+.plan-page .meal-diet-tags { justify-content: flex-start; gap: 5px; margin: 12px 0 0; }
+.plan-page .meal-diet-tag { font-size: 10px; padding: 3px 7px; background: #f0f2e8; border-color: #e0e5d6; color: #4b614b; }
+.plan-page .meal-actions { gap: 8px; flex-wrap: wrap; }
+.plan-page .meal-actions .small-button { min-height: 44px; padding: 8px 12px; font-size: 12px; background: #f3f4eb; border-color: #dde2d3; }
+.plan-page .meal-card-locked { background: #eef2e8 !important; border-color: #829a7b !important; }
+.plan-page .plan-home > .plan-best-match { grid-column: 1; }
+.plan-page .best-match-card { background: none; box-shadow: none; border-radius: 0; padding: 0; margin: 0; }
+.plan-page .best-match-label { font: 400 28px/1.25 Georgia, 'Times New Roman', serif; color: var(--plan-ink); }
+.plan-page .best-match-card h3 { font-size: 16px; margin: 16px 0; }
+.plan-page .best-match-card p { font-size: 14px; line-height: 1.6; }
+.plan-page .best-match-card .best-match-label { font-size: 28px; }
+.plan-page .progress-fill { background: var(--plan-green); }
+.plan-page .cook-button { min-height: 44px; background: var(--plan-green); font-size: 14px; }
+.plan-page .plan-home > .shopping-progress-card { grid-column: 2; text-align: left; }
+.plan-page .shopping-progress-card p { font-size: 14px; color: var(--plan-muted); }
+.plan-page .shopping-progress-card .small-button { min-height: 44px; }
+.plan-page button:focus-visible, .signed-in-app .app-header button:focus-visible { outline: 3px solid #8b6841; outline-offset: 3px; }
+@media (max-width: 900px) {
+  .app.plan-page { padding: 20px; }
+  .plan-page .meal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .plan-page .plan-intro { gap: 20px; }
+}
+@media (max-width: 700px) {
+  .signed-in-app .app-header { grid-template-columns: minmax(0, 1fr); grid-template-areas: "brand" "controls" "nav"; gap: 10px; padding: 16px; }
+  .signed-in-app .app-header .header-controls { justify-content: flex-start; }
+  .signed-in-app .app-header .tab-nav { display: flex; gap: 4px; }
+  .signed-in-app .app-header .tab-nav button { flex: 1 1 auto; padding: 9px 10px; font-size: 13px; }
+  .app.plan-page { padding: 12px 14px 32px; }
+  .plan-page .plan-intro { grid-template-columns: minmax(0, 1fr); margin: 22px 0 28px; gap: 0; }
+  .plan-page .plan-intro h2 { font-size: 34px; }
+  .plan-page .plan-intro-description { margin-bottom: 16px; }
+  .plan-page .plan-intro-photo { display: none; }
+  .plan-page .generate-button { width: 100%; }
+  .plan-page .plan-home { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .plan-page .plan-home > .plan-best-match, .plan-page .plan-home > .shopping-progress-card { grid-column: 1; }
+  .plan-page .plan-home > .card { padding: 20px; }
+  .plan-page .plan-home > .weekly-menu { padding: 0; }
+  .plan-page .section-header h2 { font-size: 28px; }
+}
+@media (max-width: 480px) {
+  .plan-page .meal-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-page button, .plan-page .meal-card, .plan-page .meal-image, .plan-page .progress-fill { transition: none !important; }
+  .plan-page button:hover { transform: none; }
+}
+
+/* Keep each weekly card in one column, with media sizing owned by its wrapper.
+   The legacy shared card rule enables flex-wrap, which is unsafe for columns. */
+.plan-page .meal-grid .meal-card {
+  flex-flow: column nowrap;
+  height: auto;
+  min-height: 0;
+}
+.plan-page .meal-grid .meal-info {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+}
+.plan-page .meal-media {
+  width: 100%;
+  min-width: 0;
+  aspect-ratio: 1.55;
+  margin-bottom: 14px;
+}
+.plan-page .meal-media > .meal-image,
+.plan-page .meal-media > .meal-image-placeholder {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  min-height: 0;
+  margin: 0;
+}
+.plan-page .meal-title-button {
+  display: block;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.plan-page .meal-diet-tags { min-width: 0; max-width: 100%; }
+.plan-page .meal-diet-tag { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.plan-page .meal-actions { flex: 0 0 auto; min-width: 0; width: 100%; }
+.plan-page .meal-actions button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+/* Supporting panels size to their own content instead of stretching to a peer. */
+.plan-page .plan-home > .shopping-progress-card,
+.plan-page .plan-home > .plan-best-match { align-self: start; }

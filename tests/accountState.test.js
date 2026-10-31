@@ -1872,7 +1872,7 @@ test('changed full Generate scrolls the This Week target once, only after the re
   assert.equal(resultsScrolls(app).length, 1)
   const request = resultsScrolls(app)[0]
   assert.equal(request.target.props.className, 'section-header')
-  assert.equal(app.nodes(request.target).find(node => node.type === 'h2').props.children[0], 'This Week')
+  assert.equal(app.nodes(request.target).find(node => node.type === 'h2').props.children[0], 'This Week’s Menu')
   assert.deepEqual(request.options, { behavior: 'smooth', block: 'start' })
   assert.equal(request.renderedMeals.filter(item => item.meal).length, 7)
   assert.deepEqual(request.renderedMeals, app.state.weeklyMeals)
