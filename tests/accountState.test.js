@@ -563,7 +563,7 @@ test('Plan titles open shared details while Recipes View/Hide stays inline witho
 test('Pantry Add Missing stops card propagation and preserves shopping-list addition', async () => {
   const app = await pantryDetailApp()
   const card = app.nodes().find(node => node.props?.className === 'pantry-match-card' && nodeText(node).includes('Egg supper'))
-  const add = app.nodes(card).find(node => node.type === 'button')
+  const add = app.nodes(card).find(node => node.type === 'button' && nodeText(node).includes('Add Missing'))
   let stopped = false
   add.props.onClick({ stopPropagation() { stopped = true } })
   // Model the parent click only if the child did not stop propagation.
@@ -616,7 +616,7 @@ test('Pantry Add Missing feedback is per-card; repeats preserve Bread and pantry
   function addMissing() {
     let stopped = false
     const card = target()
-    app.nodes(card).find(node => node.type === 'button').props.onClick({ stopPropagation() { stopped = true } })
+    app.nodes(card).find(node => node.type === 'button' && nodeText(node).includes('Add Missing')).props.onClick({ stopPropagation() { stopped = true } })
     if (!stopped) card.props.onClick()
     assert.equal(stopped, true); app.flush()
   }
@@ -626,7 +626,7 @@ test('Pantry Add Missing feedback is per-card; repeats preserve Bread and pantry
   assert.equal(app.state.viewingRecipe, null)
   assert.equal(detailModals(app).length, 0)
   assert.deepEqual(app.state.pantryItems, ['Cheese', 'Butter'])
-  const counts = app.nodes(target()).find(node => node.type === 'p').props.children
+  const counts = app.nodes(target()).find(node => node.type === 'p' && nodeText(node).includes('ingredients available')).props.children
   assert.ok(counts.includes(2)); assert.ok(counts.includes(3))
   assert.deepEqual(app.nodes(target()).filter(node => node.type === 'li').map(nodeText), ['Bread'])
   clickButton(app, '🛒 Shop')
@@ -1419,7 +1419,7 @@ test('delayed deletion success cleans current assignments only, preserving newer
   app.nodes(thursdayCard).find(node => node.type === 'button' && nodeText(node) === 'Lock').props.onClick(); app.flush()
   clickButton(app, '🥫 Pantry')
   const card = app.nodes().find(node => node.props?.className === 'pantry-match-card' && nodeText(node).includes('Egg bread'))
-  app.nodes(card).find(node => node.type === 'button').props.onClick({ stopPropagation() {} }); app.flush()
+  app.nodes(card).find(node => node.type === 'button' && nodeText(node).includes('Add Missing')).props.onClick({ stopPropagation() {} }); app.flush()
   await resolveDeletion(app, deleting, 101)
   assert.equal(app.state.weeklyMeals.find(item => item.day === 'Monday').meal, null)
   assert.equal(app.state.weeklyMeals.find(item => item.day === 'Tuesday').meal.id, 102)
@@ -2320,4 +2320,63 @@ test('Shop display regrouping and clean labels cause no cache or Supabase writes
   assert.equal(removed.label,item.label)
   assert.deepEqual(removed.legacyGroups,item.legacyGroups)
   assert.equal(shopping.shoppingRemovalKey(removed),shopping.shoppingRemovalKey(item))
+})
+
+
+test('Pantry presentation provides an accessible add form, named removal and explicit recipe detail buttons', async () => {
+  const app = await pantryDetailApp()
+  const root = app.nodes().find(n => n.props?.className?.includes('pantry-page'))
+  assert.ok(root)
+  assert.ok(nodeText(app.nodes()).includes('Pantry tracks what you have, not how much.'))
+  assert.ok(nodeText(app.nodes()).includes('Quick Add'))
+  const label = app.nodes().find(n => n.type === 'label' && n.props.htmlFor === 'pantry-ingredient')
+  assert.equal(nodeText(label),'Add Ingredient')
+  const input = app.nodes().find(n => n.props?.id === 'pantry-ingredient')
+  assert.equal(input.props['aria-describedby'],'pantry-add-help')
+  assert.ok(app.nodes().find(n => n.props?.id === 'pantry-add-help'))
+  const remove = app.nodes().find(n => n.props?.className === 'pantry-remove')
+  assert.equal(remove.props['aria-label'],'Remove Eggs')
+  const before = structuredClone(app.state.shoppingList), requests = app.requests.length
+  const card = app.nodes().find(n => n.props?.className === 'pantry-match-card' && nodeText(n).includes('Egg supper'))
+  const view = app.nodes(card).find(n => n.type === 'button' && nodeText(n) === 'View Recipe')
+  assert.equal(view.props.type,'button')
+  let stopped = false
+  view.props.onClick({stopPropagation(){stopped=true}});app.flush()
+  assert.equal(stopped,true)
+  assert.equal(detailModals(app).length,1)
+  assert.equal(app.state.viewingRecipe.id,91)
+  assert.deepEqual(app.state.shoppingList,before)
+  assert.equal(app.requests.length,requests)
+  closeDetails(app)
+  const missing = app.nodes().find(n => n.props?.className === 'pantry-match-card' && nodeText(n).includes('Plain eggs'))
+  assert.ok(app.nodes(missing).some(n => n.props?.className === 'pantry-photo-placeholder'))
+})
+
+test('Pantry ingredient counts and recommendation states distinguish empty, loading, unavailable and no matches', async () => {
+  const app = appHarness();await app.ready('A',[],{},[]);clickButton(app,'🥫 Pantry')
+  assert.ok(nodeText(app.nodes()).includes('Your pantry is empty.'))
+  const heading = app.nodes().find(n => n.props?.className === 'pantry-section-heading')
+  assert.equal(app.nodes(heading).find(n => n.type === 'span').props.children[0],0)
+  const loading = app.state.loadPantryItems();await app.pump()
+  assert.ok(nodeText(app.nodes()).includes('Finding meals from your pantry'))
+  assert.equal(nodeText(app.nodes()).includes('Your pantry is empty.'),false)
+  latestRequest(app,'pantry_items').reject(new Error('Offline'));await loading;await app.pump()
+  assert.ok(nodeText(app.nodes()).includes('Meal suggestions are unavailable until your pantry loads.'))
+  assert.equal(app.nodes().some(n => n.props?.className === 'pantry-match-card'),false)
+  clickButton(app,'Retry Pantry');await app.pump()
+  latestRequest(app,'pantry_items').resolve({data:[{item_name:'An exceptionally long ingredient name with meaningful (parentheses)'}],error:null});await app.pump()
+  assert.ok(nodeText(app.nodes()).includes('No matching recipes yet.'))
+  assert.deepEqual(app.state.pantryItems,['An exceptionally long ingredient name with meaningful (parentheses)'])
+  const section = app.nodes().find(n => n.props?.className === 'pantry-section-heading')
+  assert.equal(app.nodes(section).find(n => n.type === 'span').props.children[0],1)
+})
+
+test('Pantry recipe load failure has its own retry instead of a false no-match state', async () => {
+  const app = await failedInitialLoads(['recipes']);clickButton(app,'🥫 Pantry')
+  assert.ok(nodeText(app.nodes()).includes('Meal suggestions are unavailable because recipes could not load.'))
+  assert.equal(nodeText(app.nodes()).includes('No matching recipes yet.'),false)
+  clickButton(app,'Retry recipes');await app.pump()
+  assert.ok(nodeText(app.nodes()).includes('Finding meals from your pantry'))
+  latestRequest(app,'recipes').resolve({data:[],error:null});await app.pump()
+  assert.equal(nodeText(app.nodes()).includes('Meal suggestions are unavailable'),false)
 })

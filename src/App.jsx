@@ -1478,7 +1478,7 @@ if (!saved || !ownsAccount(owner)) return
   )
 }
   return (
-    <div className={`app signed-in-app ${activeTab === "planner" ? "plan-page" : activeTab === "recipes" ? "library-page" : activeTab === "shopping" ? "shopping-page" : ""}`}>
+    <div className={`app signed-in-app ${activeTab === "planner" ? "plan-page" : activeTab === "recipes" ? "library-page" : activeTab === "shopping" ? "shopping-page" : activeTab === "pantry" ? "pantry-page" : ""}`}>
       <header className="hero app-header">
         <div className="app-brand">
           <h1>Dinnerlyst</h1>
@@ -2415,10 +2415,12 @@ if (!saved || !ownsAccount(owner)) return
         </section>
         )}
         {activeTab === "pantry" && (
-  <section className="card pantry-view">
+  <section className="card pantry-view" aria-labelledby="pantry-title">
     <div className="pantry-intro">
-      <h2>What do you already have?</h2>
-      <p>Save ingredients you have on hand. Dinnerlyst won’t add them to your generated shopping list.</p>
+      <p className="pantry-eyebrow">A well-stocked start</p>
+      <h2 id="pantry-title">Your Pantry</h2>
+      <p>Keep your kitchen essentials close and discover meals you’re ready to make.</p>
+      <p className="pantry-guidance">Pantry tracks what you have, not how much. Items in your pantry may be excluded from your shopping list, so check quantities before shopping.</p>
     </div>
     {pantryLoad === "loading" && <p role="status">Loading Pantry…</p>}
     {pantryLoad === "error" && <div role="alert"><p>Could not load your Pantry.</p><button className="small-button" onClick={() => loadPantryItems()}>Retry Pantry</button></div>}
@@ -2428,20 +2430,22 @@ if (!saved || !ownsAccount(owner)) return
       e.preventDefault()
       return changePantryItem(pantrySearch.trim(), false, true)
     }}>
-      <label htmlFor="pantry-ingredient">Add ingredient</label>
+      <label htmlFor="pantry-ingredient">Add Ingredient</label>
+      <p id="pantry-add-help">Enter an ingredient to add. Typing also narrows Quick Add suggestions below.</p>
       <div className="pantry-add-row">
     <input
   type="text"
-  placeholder="Search ingredients..."
+  placeholder="e.g. Rice or olive oil"
   value={pantrySearch}
   onChange={(e) => setPantrySearch(e.target.value)}
   id="pantry-ingredient"
+  aria-describedby="pantry-add-help"
 />
         <button type="submit" disabled={pantryLoad !== "ready" || pantryPending} className="pantry-add-button">Add</button>
       </div>
     </form>
     <div className="pantry-section">
-      <h3>Your Pantry</h3>
+      <header className="pantry-section-heading"><h3>On your shelves</h3>{pantryLoad === "ready" && <span>{pantryItems.length} {pantryItems.length === 1 ? "ingredient" : "ingredients"}</span>}</header>
       <div className="pantry-chip-group">
 {pantryItems.length === 0 ? (
   pantryLoad === "ready" && <p className="pantry-empty">Your pantry is empty. Add an ingredient above or choose a pantry staple below.</p>
@@ -2464,7 +2468,8 @@ if (!saved || !ownsAccount(owner)) return
       </div>
     </div>
     <div className="pantry-section">
-      <h3>Pantry Staples</h3>
+      <h3>Quick Add</h3>
+      <p className="pantry-section-description">Everyday staples, one tap away.</p>
       <div className="pantry-chip-group">
 {[
   "Chicken",
@@ -2494,17 +2499,23 @@ if (!saved || !ownsAccount(owner)) return
     </div>
     <div className="pantry-section pantry-meals">
       <h3>Meals You're Close to Making</h3>
-      {pantryViewMatches.length === 0 && (
-        <p className="pantry-empty">Add more pantry ingredients and we'll show meals you're close to making.</p>
+      {pantryLoad === "loading" || recipeLoad === "loading" ? <p role="status">Finding meals from your pantry…</p> :
+       pantryLoad === "error" ? <p className="pantry-empty">Meal suggestions are unavailable until your pantry loads.</p> :
+       recipeLoad === "error" ? <div role="alert"><p>Meal suggestions are unavailable because recipes could not load.</p><button type="button" className="small-button" onClick={() => getRecipes()}>Retry recipes</button></div> : pantryViewMatches.length === 0 && (
+        <p className="pantry-empty">{pantryItems.length === 0 ? "Add pantry ingredients to discover meals you’re close to making." : "No matching recipes yet. Meals appear here when you have at least half their ingredients."}</p>
       )}
-{pantryViewMatches
+<div className="pantry-recipe-grid">
+{pantryLoad === "ready" && recipeLoad === "ready" && pantryViewMatches
   .map((recipe) => (
     <div
   key={recipe.id}
   className="pantry-match-card"
   onClick={() => setViewingRecipe(recipe)}
 >
-      <strong>{recipe.name}</strong>
+      <div className="pantry-recipe-media">{recipe.image_url ? <img src={recipe.image_url} alt={recipe.name} loading="lazy" /> : <div className="pantry-photo-placeholder"><span aria-hidden="true">🍽️</span><p>Something delicious awaits</p></div>}</div>
+      <div className="pantry-recipe-content">
+      <h4>{recipe.name}</h4>
+      <button type="button" className="pantry-view-recipe" onClick={(event) => { event.stopPropagation(); setViewingRecipe(recipe) }}>View Recipe</button>
       <p>
   ✅ {recipe.matchedCount} of {recipe.totalCount} ingredients available
 </p>
@@ -2545,9 +2556,10 @@ if (!saved || !ownsAccount(owner)) return
   pantryAddFeedback[recipe.id]?.ingredients === JSON.stringify(recipe.missingIngredients) && (
     <p role="status">{pantryAddFeedback[recipe.id].message}</p>
 )}
+      </div>
     </div>
   ))}
-
+      </div>
     </div>
   </section>
 )}
