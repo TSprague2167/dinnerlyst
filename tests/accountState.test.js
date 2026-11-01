@@ -6,6 +6,7 @@ import * as account from '../src/accountState.js'
 import * as shopping from '../src/shoppingList.js'
 import * as ingredients from '../src/ingredients.js'
 import * as pantry from '../src/pantry.js'
+import * as shoppingDisplay from '../src/shoppingDisplay.js'
 
 const recipe = (id, name = `Recipe ${id}`) => ({ id, name, ingredients: ['eggs'], instructions: '' })
 const plan = id => ({ weeklyMeals: [{ day: 'Monday', meal: recipe(id) }], shoppingList: { Other: ['paper towels'] }, lockedDays: ['Monday'] })
@@ -123,7 +124,7 @@ function appHarness(storage = memoryStorage(), weekday = null, callbackType = nu
   }
   let source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8').replace(/^import .*\n/gm, '').replace('export default App', '')
   source = source.replace('  if (!authReady ||', '  observe({ session, weeklyMeals, shoppingList, lockedDays, recipes, recipeName, ingredientRows, instructions, dietTags, selectedCategories, editingRecipeId, recipeUrl, imageUrl, imageFile, viewingRecipe, expandedRecipeId, swapOptions, pantryItems, checkedShoppingItems, onboardingAnswers, onboardingStep, searchTerm, pantrySearch, activeTab, selectedCategory, swipingDay, generateWeeklyMeals, regenerateMeal, cookTonight, getRecipes, addRecipe, importRecipeFromUrl, deleteRecipe, beginRecipeEdit, cancelRecipeEdit, recipeSaving, logout, recipeLoad, pantryLoad, checkedLoad, importing, changePantryItem, changeShoppingCheck, loadPantryItems, loadCheckedShoppingItems, passwordSetupRequired, passwordSetupStatus, completePasswordSetup, newPassword, confirmPassword });\n  if (!authReady ||')
-  const helpers = { ...account, ...shopping, ...ingredients, ...pantry }
+  const helpers = { ...account, ...shopping, ...ingredients, ...pantry, ...shoppingDisplay }
   const code = transformSync('App.jsx', source, { jsx: { runtime: 'classic' } }).code
   const App = new Function('React', 'useState', 'useRef', 'useEffect', 'useCallback', 'initialAuthCallbackType', 'supabase', 'observe', 'window', 'alert', 'Date', ...Object.keys(helpers), code + '\nreturn App')(
     React, React.useState, React.useRef, React.useEffect, React.useCallback, callbackType, supabase, value => { snapshot = value }, { matchMedia: query => ({ matches: reducedMotion && query === '(prefers-reduced-motion: reduce)' }), localStorage: storage, location: { reload() { reloads++ } }, confirm(message) { confirmations.push(message); return confirmResult } }, message => alerts.push(message), class extends Date { toLocaleDateString(...args) { return weekday || super.toLocaleDateString(...args) } }, ...Object.values(helpers))
@@ -2081,7 +2082,7 @@ test('trash hides generated and extra rows from shopping/progress, preserves che
   const beforeRecipe = structuredClone(app.state.recipes)
   trashShoppingRow(app, 'garlic — 3 cloves'); trashShoppingRow(app, 'Bread')
   assert.equal(shoppingRows(app).length, 1)
-  assert.equal(app.nodes().find(node => node.type === 'p' && node.props.children[0] === 'Checked items: ').props.children[1], 0)
+  assert.equal(app.nodes().find(node => node.props?.className === 'shopping-progress-count').props.children[0], 0)
   assert.deepEqual(app.state.checkedShoppingItems, checked)
   assert.deepEqual(app.state.recipes, beforeRecipe)
   assert.equal(app.requests.length, requestsBefore, 'removal never deletes checked records or recipes')
@@ -2092,7 +2093,7 @@ test('trash hides generated and extra rows from shopping/progress, preserves che
   clickButton(app, '🛒 Shop'); clickButton(app, 'Restore removed items')
   assert.equal(shoppingRows(app).length, 3)
   assert.equal(app.nodes(shoppingRow(app, 'garlic — 3 cloves')).find(node => node.props?.type === 'checkbox').props.checked, true)
-  assert.equal(app.nodes().find(node => node.type === 'p' && node.props.children[0] === 'Checked items: ').props.children[1], 1)
+  assert.equal(app.nodes().find(node => node.props?.className === 'shopping-progress-count').props.children[0], 1)
   assert.equal(nodeText(app.nodes()).includes('Restore removed items'), false)
   assert.equal(app.requests.length, requestsBefore)
   assertPlannerCacheMatches(app)
@@ -2144,7 +2145,7 @@ test('late checkbox success cannot resurrect a removed row and Restore retains i
   trashShoppingRow(app, 'garlic — 3 cloves')
   latestRequest(app, 'checked_shopping_items', 'insert').resolve({ error: null }); await checking; await app.pump()
   assert.equal(shoppingRow(app, 'garlic — 3 cloves'), undefined)
-  assert.equal(app.nodes().find(node => node.type === 'p' && node.props.children[0] === 'Checked items: ').props.children[1], 0)
+  assert.equal(app.nodes().find(node => node.props?.className === 'shopping-progress-count').props.children[0], 0)
   assert.equal(app.requests.some(req => req.table === 'checked_shopping_items' && req.method === 'delete'), false)
   clickButton(app, 'Restore removed items')
   assert.equal(app.nodes(shoppingRow(app, 'garlic — 3 cloves')).find(node => node.props?.type === 'checkbox').props.checked, true)
@@ -2163,7 +2164,7 @@ test('Pantry Add Missing explicitly restores removed extras or generated ingredi
       assert.equal(detailModals(app).length, 0)
     }
     if (!planned) addMissing()
-    clickButton(app, '🛒 Shop'); trashShoppingRow(app, planned ? 'bread (1)' : 'Bread')
+    clickButton(app, '🛒 Shop'); trashShoppingRow(app, planned ? 'bread' : 'Bread')
     addMissing()
     assert.ok(nodeText(app.nodes()).includes('✓ Added to Shopping List'))
     addMissing()
@@ -2198,4 +2199,125 @@ test('Recipe Library covers omit ingredients while View/Hide preserves complete 
   assert.deepEqual(app.state.recipes.find(item => item.id === owned.id).ingredients, owned.ingredients)
   const sharedCard = cards().find(node => nodeText(node).includes(shared.name))
   assert.deepEqual(app.nodes(sharedCard).filter(node => node.type === 'button').map(nodeText), ['View Recipe'])
+})
+
+
+test('Shop labels contain checkbox and complete ingredient text, while Remove remains separate', async () => {
+  const app = await removalApp(); clickButton(app, '🛒 Shop')
+  for (const row of shoppingRows(app)) {
+    const label = app.nodes(row).find(n => n.type === 'label' && n.props.className === 'shopping-check-label')
+    assert.ok(label)
+    assert.equal(app.nodes(label).filter(n => n.props?.type === 'checkbox').length, 1)
+    assert.ok(app.nodes(label).some(n => n.props?.className === 'shopping-item-label'))
+    assert.equal(app.nodes(label).filter(n => n.type === 'button').length, 0)
+    assert.ok(app.nodes(row).some(n => n.props?.className === 'shopping-remove' && n.props['aria-label'].startsWith('Remove ')))
+  }
+  const groups = app.nodes().filter(n => n.props?.className === 'shopping-group')
+  assert.ok(groups.length > 0)
+  for (const group of groups) {
+    const count = app.nodes(group).filter(n => n.props?.className === 'shopping-item').length
+    assert.ok(count > 0)
+    assert.equal(app.nodes(app.nodes(group).find(n => n.props?.className === 'shopping-group-heading')).find(n => n.type === 'span').props.children[0], count)
+  }
+  const bar = app.nodes().find(n => n.props?.role === 'progressbar')
+  assert.equal(bar.props['aria-valuenow'], 0)
+  assert.equal(bar.props['aria-valuemax'], shoppingRows(app).length)
+})
+
+test('Shop distinguishes no plan, partial plan and no visible grocery requirements without false completion', async () => {
+  const empty = appHarness(); await empty.ready('A', []); clickButton(empty, '🛒 Shop')
+  assert.ok(nodeText(empty.nodes()).includes('No weekly plan yet'))
+  assert.equal(empty.nodes().some(n => n.props?.role === 'progressbar'), false)
+  assert.equal(nodeText(empty.nodes()).includes('All set —'), false)
+  clickButton(empty, 'Go to Plan'); assert.equal(empty.state.activeTab, 'planner')
+  const app = await removalApp(); clickButton(app, '🛒 Shop')
+  assert.equal(app.nodes().find(n => n.type === 'p' && n.props?.children?.[0] === 'Your plan has ').props.children[1], 1)
+  for (const row of [...shoppingRows(app)]) trashShoppingRow(app, nodeText(app.nodes(row).find(n => n.props?.className === 'shopping-item-label')))
+  assert.ok(nodeText(app.nodes()).includes('No visible grocery requirements'))
+  assert.ok(nodeText(app.nodes()).includes('Restore removed items'))
+  assert.equal(nodeText(app.nodes()).includes('All set —'), false)
+})
+
+test('Shop completion and progress update only after successful checkbox saves', async () => {
+  const app = await bestApp({ library: [], shoppingList: { Other: [{ key: 'Bread', label: 'Bread', extra: true }] } })
+  clickButton(app, '🛒 Shop')
+  const input = app.nodes(shoppingRow(app, 'Bread')).find(n => n.props?.type === 'checkbox')
+  const saving = input.props.onChange({ target: { checked: true } }); await app.pump()
+  assert.equal(nodeText(app.nodes()).includes('All set —'), false)
+  assert.equal(app.nodes(shoppingRow(app, 'Bread')).find(n => n.props?.type === 'checkbox').props.disabled, true)
+  latestRequest(app, 'checked_shopping_items', 'insert').resolve({ error: null }); await saving; await app.pump()
+  assert.ok(nodeText(app.nodes()).includes('All set — every visible grocery item is checked.'))
+  assert.equal(app.nodes().find(n => n.props?.role === 'progressbar').props['aria-valuenow'], 1)
+})
+
+test('Shop withholds progress during checked loading/errors and retains retry behavior', async () => {
+  const app = await removalApp(); clickButton(app, '🛒 Shop')
+  const reload = app.state.loadCheckedShoppingItems(); await app.pump()
+  assert.equal(app.nodes().some(n => n.props?.role === 'progressbar'), false)
+  assert.ok(nodeText(app.nodes()).includes('Loading checked items'))
+  latestRequest(app, 'checked_shopping_items').reject(new Error('Offline')); await reload; await app.pump()
+  assert.equal(app.nodes().some(n => n.props?.role === 'progressbar'), false)
+  assert.ok(nodeText(app.nodes()).includes('Retry checked items'))
+  clickButton(app, 'Retry checked items'); await app.pump()
+  latestRequest(app, 'checked_shopping_items').resolve({ data: [], error: null }); await app.pump()
+  assert.ok(app.nodes().some(n => n.props?.role === 'progressbar'))
+})
+
+test('Shop reports pantry-load failures and retries without changing list identities', async () => {
+  const app = await removalApp(); clickButton(app, '🛒 Shop')
+  const keys = shoppingRows(app).map(n => app.nodes(n).find(c => c.props?.className === 'shopping-item-label').props.children)
+  const reload = app.state.loadPantryItems(); await app.pump()
+  assert.ok(nodeText(app.nodes()).includes('Updating your grocery requirements'))
+  latestRequest(app, 'pantry_items').reject(new Error('Offline')); await reload; await app.pump()
+  assert.ok(nodeText(app.nodes()).includes('Pantry information could not load'))
+  assert.equal(app.nodes().some(n => n.props?.role === 'progressbar'), false)
+  clickButton(app, 'Retry pantry'); await app.pump()
+  latestRequest(app, 'pantry_items').resolve({ data: [], error: null }); await app.pump()
+  assert.deepEqual(shoppingRows(app).map(n => app.nodes(n).find(c => c.props?.className === 'shopping-item-label').props.children), keys)
+  assert.ok(app.nodes().some(n => n.props?.role === 'progressbar'))
+})
+
+
+test('Shop display regrouping and clean labels cause no cache or Supabase writes', async () => {
+  const meal = { ...recipe(501, 'Seasoned salmon'), user_id: 'A',
+    ingredients: ['salmon', 'black pepper', '1 yellow onion, diced', 'garlic', 'butter beans'] }
+  const app = await bestApp({ library: [meal], meals: [{ day:'Monday',meal }] })
+  const before = structuredClone(app.state.shoppingList)
+  const cached = app.storage.getItem(account.plannerCacheKey('A'))
+  const requests = app.requests.length
+  let writes = 0
+  const originalSet = app.storage.setItem
+  app.storage.setItem = (...args) => { writes++; return originalSet(...args) }
+  clickButton(app, '🛒 Shop')
+  assert.deepEqual(app.state.shoppingList,before)
+  assert.equal(app.storage.getItem(account.plannerCacheKey('A')),cached)
+  assert.equal(app.requests.length,requests)
+  assert.equal(writes,0)
+  const heading = app.nodes().find(n=>n.type==='h3' && nodeText(n)==='Meat & Seafood')
+  assert.ok(heading)
+  assert.ok(shoppingRow(app,'1 yellow onion, diced'))
+  assert.equal(app.nodes().some(n=>n.props?.className==='shopping-item-label' && nodeText(n).endsWith('(1)')),false)
+  const allOriginal = Object.values(before).flat().filter(shopping.isShoppingItemVisible)
+  assert.equal(shoppingRows(app).length,allOriginal.length)
+  const count = app.nodes().find(n=>n.props?.className==='shopping-progress-count')
+  assert.equal(count.props.children[2],allOriginal.length)
+  clickButton(app,'🍽 Plan');clickButton(app,'🛒 Shop')
+  assert.equal(writes,0)
+  assert.equal(app.requests.length,requests)
+  const item = Object.values(before).flat().find(x=>x.label==='1 yellow onion, diced (1)')
+  const check = app.nodes(shoppingRow(app,'1 yellow onion, diced')).find(n=>n.props?.type==='checkbox').props.onChange({target:{checked:true}})
+  await app.pump()
+  const insert=latestRequest(app,'checked_shopping_items','insert')
+  assert.equal(insert.payload.item_name,item.key)
+  insert.resolve({error:null});await check;await app.pump()
+  const row=shoppingRow(app,'1 yellow onion, diced')
+  assert.equal(app.nodes(row).find(n=>n.props?.type==='checkbox').props.checked,true)
+  const remove=app.nodes(row).find(n=>n.props?.className==='shopping-remove')
+  assert.equal(remove.props['aria-label'],'Remove 1 yellow onion, diced from shopping list')
+  remove.props.onClick();app.flush()
+  const removed=Object.values(app.state.shoppingList).flat().find(x=>x.key===item.key)
+  assert.equal(removed.userRemoved,true)
+  assert.equal(removed.label,item.label)
+  assert.deepEqual(removed.legacyGroups,item.legacyGroups)
+  assert.equal(shopping.shoppingRemovalKey(removed),shopping.shoppingRemovalKey(item))
 })

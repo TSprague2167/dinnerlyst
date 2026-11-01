@@ -4,6 +4,7 @@ import './App.css'
 import { discardLegacyCaches, loadPlannerCache, persistPlannerCache, nextAccountOwner, isCurrentAccount } from './accountState'
 import { getPantryRecipeMatch } from './pantry'
 import { refreshWeeklyMeals, rebuildShoppingList, asShoppingItem, isShoppingItemChecked, shoppingCheckIdentities, shoppingRemovalKey, isShoppingItemVisible, removeShoppingItem, restoreRemovedShoppingItems, addMissingShoppingItems, shoppingContainsIngredient } from './shoppingList'
+import { shoppingDisplayLabel, shoppingDisplayGroups } from './shoppingDisplay'
 import { emptyIngredientRow, getIngredientRows, formatIngredient, rowsFromIngredientStrings, validateIngredientRows } from './ingredients'
 
 
@@ -131,6 +132,10 @@ const [onboardingAnswers, setOnboardingAnswers] = useState(defaultOnboardingAnsw
   const checkedShoppingCount = currentShoppingItems.filter((item) =>
     isShoppingItemChecked(item, checkedShoppingItems)
   ).length
+
+  const shoppingReady = checkedLoad === "ready" && recipeLoad === "ready" && pantryLoad === "ready"
+  const plannedMealCount = weeklyMeals.filter(item => item.meal).length
+  const shoppingHasRemoved = Object.values(shoppingList).flat().some(item => asShoppingItem(item).userRemoved)
 
   const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 const [editingRecipeId, setEditingRecipeId] = useState(null)
@@ -1473,7 +1478,7 @@ if (!saved || !ownsAccount(owner)) return
   )
 }
   return (
-    <div className={`app signed-in-app ${activeTab === "planner" ? "plan-page" : activeTab === "recipes" ? "library-page" : ""}`}>
+    <div className={`app signed-in-app ${activeTab === "planner" ? "plan-page" : activeTab === "recipes" ? "library-page" : activeTab === "shopping" ? "shopping-page" : ""}`}>
       <header className="hero app-header">
         <div className="app-brand">
           <h1>Dinnerlyst</h1>
@@ -2327,46 +2332,86 @@ if (!saved || !ownsAccount(owner)) return
 )}
         
         {activeTab === "shopping" && (
-        <section className="card">
-          <h2>🛒Shopping List</h2>
-          <p>Checked items: {checkedShoppingCount}</p>
-          {renderCheckedStatus()}
-          {Object.values(shoppingList).flat().some(item => asShoppingItem(item).userRemoved) && (
-            <button type="button" className="small-button" onClick={restoreShoppingEntries}>Restore removed items</button>
+        <section className="card shopping-view" aria-labelledby="shopping-title">
+          <header className="shopping-heading">
+            <p className="shopping-eyebrow">A little preparation. Easier evenings.</p>
+            <h2 id="shopping-title">Shopping List</h2>
+            <p>Your groceries, gathered from your meal plan. Ingredients already in your pantry stay off the list.</p>
+          </header>
+          <div className="shopping-summary" aria-label="Shopping progress">
+            {shoppingReady ? (
+              <>
+                <p className="shopping-progress-count">{checkedShoppingCount}<span> of </span>{currentShoppingItems.length}<span> items checked</span></p>
+                {currentShoppingItems.length > 0 && (
+                  <div className="shopping-progress-track" role="progressbar" aria-label="Groceries checked"
+                    aria-valuemin={0} aria-valuemax={currentShoppingItems.length} aria-valuenow={checkedShoppingCount}>
+                    <div style={{ width: `${checkedShoppingCount / currentShoppingItems.length * 100}%` }} />
+                  </div>
+                )}
+              </>
+            ) : <p role="status">Progress is unavailable until list data is ready.</p>}
+            {renderCheckedStatus()}
+            {(recipeLoad === "loading" || pantryLoad === "loading") && <p role="status">Updating your grocery requirements…</p>}
+            {pantryLoad === "error" && <div role="alert">
+              <p>Pantry information could not load. This list may include ingredients you already have.</p>
+              <button type="button" className="small-button" onClick={() => loadPantryItems()}>Retry pantry</button>
+            </div>}
+          </div>
+          {shoppingReady && weeklyMeals.length === 0 && (
+            <div className="shopping-state" role="status">
+              <h3>No weekly plan yet</h3>
+              <p>{currentShoppingItems.length > 0 ? "You can shop these added items now, or plan meals to build the rest of your list." : "Plan your meals to bring your grocery list together."}</p>
+              <button type="button" className="small-button" onClick={() => setActiveTab("planner")}>Go to Plan</button>
+            </div>
           )}
-
-          {currentShoppingItems.length === 0 && <p className="empty">Your grocery list will appear here.</p>}
-
-          {Object.entries(shoppingList).map(([category, entries]) => {
+          {shoppingReady && weeklyMeals.length > 0 && plannedMealCount < 7 && (
+            <p className="shopping-state" role="status">Your plan has {plannedMealCount} of 7 meals. This list covers filled days and any added items.</p>
+          )}
+          {shoppingReady && currentShoppingItems.length > 0 && checkedShoppingCount === currentShoppingItems.length && (
+            <p className="shopping-state shopping-complete" role="status">All set — every visible grocery item is checked.</p>
+          )}
+          {shoppingReady && weeklyMeals.length > 0 && currentShoppingItems.length === 0 && (
+            <div className="shopping-state" role="status"><h3>No visible grocery requirements</h3>
+              <p>There are no items to shop for in the current list. Pantry-covered and removed items are not shown.</p>
+            </div>
+          )}
+          {shoppingHasRemoved && (
+            <div className="shopping-restore"><p>Some items have been removed from this list.</p>
+              <button type="button" className="small-button" onClick={restoreShoppingEntries}>Restore removed items</button>
+            </div>
+          )}
+          <div className="shopping-groups">
+          {shoppingDisplayGroups(shoppingList).map(([category, entries]) => {
   const items = entries.filter(isShoppingItemVisible)
   return (
   items.length > 0 && (
-    <div key={category}>
-      <h3>{category}</h3>
+    <section className="shopping-group" key={category} aria-label={category === "Meat" ? "Meat & Seafood" : category}>
+      <header className="shopping-group-heading"><h3>{category === "Meat" ? "Meat & Seafood" : category}</h3><span>{items.length} {items.length === 1 ? "item" : "items"}</span></header>
 
       {items.map((ingredient) => (
         <div className="shopping-item" key={shoppingRemovalKey(ingredient)}>
-         <>
+         <label className="shopping-check-label">
   <input
   type="checkbox"
   checked={isShoppingItemChecked(ingredient, checkedShoppingItems)}
   disabled={checkedLoad !== "ready" || checkedPending.includes(asShoppingItem(ingredient).key) || checkedReconcile.current}
   onChange={(e) => changeShoppingCheck(ingredient, e.target.checked)}
 />
-  <span className="shopping-item-label">{asShoppingItem(ingredient).label}</span>
+  <span className="shopping-item-label">{shoppingDisplayLabel(ingredient)}</span>
+  </label>
   <button type="button" className="shopping-remove" title="Remove item"
-    aria-label={`Remove ${asShoppingItem(ingredient).label} from shopping list`}
+    aria-label={`Remove ${shoppingDisplayLabel(ingredient)} from shopping list`}
     onClick={() => removeShoppingEntry(ingredient)}>
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true" focusable="false">
       <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />
     </svg>
   </button>
-</> 
         </div>
       ))}
-    </div>
+    </section>
   )
 )})}
+          </div>
         </section>
         )}
         {activeTab === "pantry" && (
