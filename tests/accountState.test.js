@@ -2174,3 +2174,28 @@ test('Pantry Add Missing explicitly restores removed extras or generated ingredi
     assertPlannerCacheMatches(app)
   }
 })
+
+
+test('Recipe Library covers omit ingredients while View/Hide preserves complete recipe details', async () => {
+  const owned = { ...recipe(101, 'Personal cookbook recipe'), user_id: 'A',
+    ingredients: ['First ingredient', 'Second ingredient', 'Third ingredient', 'Fourth ingredient'],
+    instructions: 'Prepare everything.\n\nCook and serve.', diet_tags: ['High Protein'], categories: ['Chicken'] }
+  const shared = { ...recipe(102, 'Shared cookbook recipe'), user_id: null }
+  const app = appHarness(); await app.ready('A', [owned, shared])
+  clickButton(app, '📖 Recipes')
+  const cards = () => app.nodes().filter(node => node.props?.className === 'recipe-card')
+  const personal = () => cards().find(node => nodeText(node).includes(owned.name))
+  const ingredientRows = () => app.nodes(personal()).filter(node => node.type === 'li').map(nodeText)
+  assert.deepEqual(ingredientRows(), [])
+  assert.equal(app.nodes(personal()).some(node => node.props?.className === 'more-ingredients'), false)
+  assert.ok(nodeText(personal()).includes('High Protein'))
+  app.nodes(personal()).find(node => node.type === 'button' && nodeText(node) === 'View Recipe').props.onClick(); app.flush()
+  assert.deepEqual(ingredientRows(), owned.ingredients)
+  assert.ok(nodeText(personal()).includes('Prepare everything.'))
+  assert.ok(nodeText(personal()).includes('Cook and serve.'))
+  app.nodes(personal()).find(node => node.type === 'button' && nodeText(node) === 'Hide Recipe').props.onClick(); app.flush()
+  assert.deepEqual(ingredientRows(), [])
+  assert.deepEqual(app.state.recipes.find(item => item.id === owned.id).ingredients, owned.ingredients)
+  const sharedCard = cards().find(node => nodeText(node).includes(shared.name))
+  assert.deepEqual(app.nodes(sharedCard).filter(node => node.type === 'button').map(nodeText), ['View Recipe'])
+})

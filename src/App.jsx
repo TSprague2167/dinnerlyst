@@ -1473,7 +1473,7 @@ if (!saved || !ownsAccount(owner)) return
   )
 }
   return (
-    <div className={`app signed-in-app ${activeTab === "planner" ? "plan-page" : ""}`}>
+    <div className={`app signed-in-app ${activeTab === "planner" ? "plan-page" : activeTab === "recipes" ? "library-page" : ""}`}>
       <header className="hero app-header">
         <div className="app-brand">
           <h1>Dinnerlyst</h1>
@@ -1923,14 +1923,25 @@ if (!saved || !ownsAccount(owner)) return
      {recipeLoad === "error" && <div role="alert"><p>Could not load recipes. Your existing recipes have been kept.</p><button className="small-button" onClick={() => getRecipes()}>Retry loading recipes</button></div>}
      <main className={`grid recipes-grid ${activeTab === "planner" ? "plan-home" : ""}`}>
       {activeTab === "recipes" && (
-        <section className="card">
-          <h2>📖 Your Recipes ({recipes.length})</h2>
+        <section className="card recipe-library" aria-labelledby="library-title">
+          <header className="library-heading">
+            <div>
+              <p className="library-eyebrow">Good meals begin here</p>
+              <h2 id="library-title">Your Recipe Library</h2>
+              <p>A collection of favorites, fresh inspiration, and meals worth making again.</p>
+            </div>
+            <button type="button" className="library-add" onClick={() => setActiveTab("add-recipe")}>+ Add Recipe</button>
+          </header>
+          <div className="library-toolbar">
+          <label className="library-search">Search by name
           <input
   type="text"
   placeholder="Search recipes..."
   value={searchTerm}
   onChange={(e) => setSearchTerm(e.target.value)}
 />
+</label>
+<label className="library-category">Category
 <select
   value={selectedCategory}
   onChange={(e) => setSelectedCategory(e.target.value)}
@@ -1947,6 +1958,9 @@ if (!saved || !ownsAccount(owner)) return
 <option value="Soup">Soup</option>
 <option value="Dessert">Dessert</option>
 </select>
+</label>
+<p className="library-count">{recipes.length} recipes in your collection</p>
+</div>
           {recipeLoad === "ready" && recipes.length === 0 && <p className="empty">No recipes yet.</p>}
            
          {recipes
@@ -1973,6 +1987,7 @@ if (!saved || !ownsAccount(owner)) return
       )
       .map((recipe) => (
         <div className="recipe-card" key={recipe.id}>
+         <div className="library-media">
          {recipe.image_url ? (
   <img
     src={recipe.image_url}
@@ -1981,34 +1996,32 @@ if (!saved || !ownsAccount(owner)) return
   />
 ) : (
   <div className="recipe-image-placeholder">
-    <span>🍽️</span>
+    <span aria-hidden="true">🍽️</span>
+    <p>Something delicious awaits</p>
   </div>
 )}
-          <div>
-            <strong>{recipe.name}</strong>
-            <div>
+          </div>
+          <div className="library-card-content">
+            <p className="library-source">{recipe.user_id === userId ? "Your recipe" : "Shared recipe"}</p>
+            <h3 className="library-recipe-title">{recipe.name}</h3>
+            <div className="library-categories">
   {(recipe.categories || []).map((cat) => (
     <span className="category-pill" key={cat}>
       {cat}
     </span>
   ))}
 </div>
-            <ul className="recipe-ingredients">
-  {(expandedRecipeId === recipe.id
-    ? recipe.ingredients
-    : recipe.ingredients.slice(0, 3)
-  ).map((ingredient, index) => (
-    <li key={index}>{ingredient}</li>
-  ))}
-</ul>
-
-{expandedRecipeId !== recipe.id && recipe.ingredients.length > 3 && (
-  <p className="more-ingredients">
-    + {recipe.ingredients.length - 3} more ingredients
-  </p>
+{recipe.diet_tags?.length > 0 && (
+  <div className="library-diet-tags" aria-label="Dietary tags">
+    {recipe.diet_tags.map(tag => <span key={tag}>{tag}</span>)}
+  </div>
 )}
 {expandedRecipeId === recipe.id && (
   <div className="recipe-details">
+    <div className="recipe-details-header"><h3>Ingredients</h3></div>
+    <ul className="recipe-ingredients">
+      {recipe.ingredients.map((ingredient, index) => <li key={index}>{ingredient}</li>)}
+    </ul>
     <div className="recipe-details-header">
       <h3>Instructions</h3>
     </div>
@@ -2037,8 +2050,9 @@ if (!saved || !ownsAccount(owner)) return
               </button>
             )}
             <button
-  className="small-button"
+  className="small-button library-view-action"
   type="button"
+  aria-expanded={expandedRecipeId === recipe.id}
   onClick={() =>
     setExpandedRecipeId(
       expandedRecipeId === recipe.id ? null : recipe.id
