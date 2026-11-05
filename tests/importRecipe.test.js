@@ -80,7 +80,7 @@ test('authenticated import verifies user before ScrapingBee and preserves JSON-L
   assert.equal(edge.calls[0].url.pathname, '/auth/v1/user')
   assert.equal(new Headers(edge.calls[0].init.headers).get('authorization'), `Bearer ${validToken}`)
   assert.equal(edge.paid().length, 1)
-  assert.equal(edge.paid()[0].url.searchParams.get('timeout'), '25000')
+  assert.equal(edge.paid()[0].url.searchParams.get('timeout'), '60000')
   assert.equal(edge.paid()[0].url.searchParams.get('render_js'), 'false')
   assert.ok(edge.paid()[0].init.signal instanceof AbortSignal)
   assert.deepEqual(await result.json(), { name: 'Rice supper', ingredients: ['Rice', 'Salt'], instructions: ['Cook rice.'],
@@ -161,7 +161,7 @@ test('deadline aborts stalled provider requests, response bodies, and authentica
     const result = edge.request()
     await waitFor(() => stage === 'auth' ? edge.calls.length === 1 : edge.paid().length === 1)
     const deadline = [...edge.timers.values()][0]
-    assert.equal(deadline.ms, 30000)
+    assert.equal(deadline.ms, 70000)
     deadline.callback()
     await safeFailure(edge, await result, 504)
     assert.equal(edge.calls.at(-1).init.signal.aborted, true)

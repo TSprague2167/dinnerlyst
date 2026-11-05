@@ -510,7 +510,7 @@ async function importRecipeFromUrl() {
   try {
     const { data, error } = await supabase.functions.invoke("import-recipe", {
       body: { url: recipeUrl },
-      timeout: 40_000,
+      timeout: 80_000,
     })
     if (!ownsAccount(owner) || recipeDraftGeneration.current !== generation) return
     if (error || !data || typeof data !== "object") throw new Error("Could not import that recipe.")

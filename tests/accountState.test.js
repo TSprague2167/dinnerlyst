@@ -1691,7 +1691,7 @@ test('client import uses a longer bounded timeout and preserves the draft when t
   const before = draftSnapshot(app)
   const importing = app.state.importRecipeFromUrl(); await app.pump()
   const invocation = latestRequest(app, 'import', 'import')
-  assert.equal(invocation.options.timeout, 40_000)
+  assert.equal(invocation.options.timeout, 80_000)
   assert.equal(app.state.importing, true)
   invocation.resolve({ data: null, error: { message: 'Function timed out' } })
   await importing; await app.pump()

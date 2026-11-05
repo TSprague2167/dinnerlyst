@@ -6,8 +6,8 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 }
 
-const IMPORT_TIMEOUT_MS = 30_000
-const SCRAPER_TIMEOUT_MS = 25_000
+const IMPORT_TIMEOUT_MS = 70_000
+const SCRAPER_TIMEOUT_MS = 60_000
 const MAX_URL_LENGTH = 4096
 const MAX_REQUEST_BYTES = 16 * 1024
 const MAX_HTML_BYTES = 2 * 1024 * 1024
