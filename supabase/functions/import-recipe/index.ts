@@ -12,6 +12,20 @@ const MAX_URL_LENGTH = 4096
 const MAX_REQUEST_BYTES = 16 * 1024
 const MAX_HTML_BYTES = 2 * 1024 * 1024
 
+// Documented ScrapingBee HTTP meanings. Never infer a timeout or target block from 500.
+const PROVIDER_HTTP_CATEGORIES: Record<number, string> = {
+  400: "invalid_request", 401: "credentials_or_credits", 403: "provider_access_denied",
+  404: "target_not_found", 410: "target_gone", 413: "target_too_large",
+  429: "concurrency_limit", 500: "scrape_failed",
+}
+
+function logProviderFailure(kind: string, status: number | null, started: number) {
+  console.error("recipe_import_provider_failed", {
+    kind, provider_status: status, elapsed_ms: Math.max(0, Math.round(performance.now() - started)),
+    provider_category: status === null ? "unknown" : PROVIDER_HTTP_CATEGORIES[status] ?? "unknown",
+  })
+}
+
 class ImportFailure extends Error {
   constructor(readonly status: number, readonly category: string, message: string) {
     super(message)
@@ -216,16 +230,27 @@ async function importRecipe(req: Request, signal: AbortSignal) {
   scrapingBeeUrl.searchParams.set("timeout", String(SCRAPER_TIMEOUT_MS))
 
   let html: string
+  let providerStatus: number | null = null
+  const providerStarted = performance.now()
   try {
     const response = await fetch(scrapingBeeUrl.toString(), { signal })
+    providerStatus = response.status
     if (!response.ok) {
+      // No documented body-code contract: do not read or parse provider error bodies.
+      // Cancellation is best-effort and must not delay the existing HTTP failure.
       void response.body?.cancel().catch(() => {})
-      throw new ImportFailure(502, "provider_failure", "Could not retrieve that recipe page. Please try again.")
+      logProviderFailure("provider_http_error", providerStatus, providerStarted)
+      throw new ImportFailure(502, "provider_http_error", "Could not retrieve that recipe page. Please try again.")
     }
     html = await readLimitedText(response, MAX_HTML_BYTES, signal)
   } catch (error) {
-    if (error instanceof ImportFailure || signal.aborted) throw error
-    throw new ImportFailure(502, "provider_failure", "Could not retrieve that recipe page. Please try again.")
+    if (signal.aborted) {
+      logProviderFailure("application_timeout", providerStatus, providerStarted)
+      throw error
+    }
+    if (error instanceof ImportFailure) throw error
+    logProviderFailure("network_failure", providerStatus, providerStarted)
+    throw new ImportFailure(502, "network_failure", "Could not retrieve that recipe page. Please try again.")
   }
 
   const jsonLdBlocks = [...html.matchAll(

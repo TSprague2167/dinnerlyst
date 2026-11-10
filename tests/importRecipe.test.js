@@ -169,3 +169,61 @@ test('deadline aborts stalled provider requests, response bodies, and authentica
     if (stage === 'auth') assert.equal(edge.paid().length, 0)
   }
 })
+
+const providerDiagnostic = edge => edge.logs.find(([event]) => event === 'recipe_import_provider_failed')?.[1]
+
+test('provider HTTP diagnostics contain only fixed fields and documented HTTP categories', async () => {
+  for (const [status, category] of [[400, 'invalid_request'], [401, 'credentials_or_credits'],
+    [403, 'provider_access_denied'], [404, 'target_not_found'], [410, 'target_gone'],
+    [413, 'target_too_large'], [429, 'concurrency_limit'], [500, 'scrape_failed'], [503, 'unknown']]) {
+    const edge = edgeHarness({ provider: () => new Response(JSON.stringify({code: '403',
+      message: `${testSecret} https://private.example/recipe user@example.com <html>private</html>`}), {status}) })
+    await safeFailure(edge, await edge.request(), 502)
+    const diagnostic = providerDiagnostic(edge)
+    assert.deepEqual(Object.keys(diagnostic).sort(), ['elapsed_ms', 'kind', 'provider_category', 'provider_status'])
+    assert.equal(diagnostic.kind, 'provider_http_error')
+    assert.equal(diagnostic.provider_status, status)
+    assert.equal(diagnostic.provider_category, category)
+    assert.ok(Number.isFinite(diagnostic.elapsed_ms) && diagnostic.elapsed_ms >= 0)
+    const logs = JSON.stringify(edge.logs)
+    for (const forbidden of [testSecret, 'private.example', 'user@example.com', '<html>', validToken]) assert.equal(logs.includes(forbidden), false)
+    assert.equal(edge.paid().length, 1)
+  }
+})
+
+test('provider error bodies are cancelled without reading, parsing, waiting or logging their content', async () => {
+  for (const cancellation of ['normal', 'reject', 'stall']) {
+    let cancelled = false, reads = 0
+    const edge = edgeHarness({provider: () => new Response(new ReadableStream({
+      pull() { reads++; throw new Error(testSecret) },
+      cancel() {
+        cancelled = true
+        if (cancellation === 'reject') return Promise.reject(new Error(testSecret))
+        if (cancellation === 'stall') return new Promise(() => {})
+      },
+    }, {highWaterMark: 0}), {status: 500})})
+    await safeFailure(edge, await edge.request(), 502)
+    assert.equal(reads, 0)
+    assert.equal(cancelled, true)
+    assert.equal(providerDiagnostic(edge).kind, 'provider_http_error')
+    assert.equal(providerDiagnostic(edge).provider_status, 500)
+    assert.equal(edge.timers.size, 0)
+  }
+})
+
+test('network failures and application timeouts are distinct from provider HTTP failures', async () => {
+  const network = edgeHarness({provider: () => {throw new Error(testSecret)}})
+  await safeFailure(network, await network.request(), 502)
+  assert.equal(providerDiagnostic(network).kind, 'network_failure')
+  assert.equal(providerDiagnostic(network).provider_status, null)
+  const stalled = edgeHarness({provider: (_input, init) => new Promise((_resolve,reject) => {
+    init.signal.addEventListener('abort', () => reject(new Error(testSecret)), {once:true})
+  })})
+  const request = stalled.request()
+  await waitFor(() => stalled.paid().length === 1)
+  ;[...stalled.timers.values()].find(timer => timer.ms === 70000).callback()
+  await safeFailure(stalled, await request, 504)
+  await waitFor(() => !!providerDiagnostic(stalled))
+  assert.equal(providerDiagnostic(stalled).kind, 'application_timeout')
+  assert.equal(providerDiagnostic(stalled).provider_status, null)
+})
