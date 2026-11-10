@@ -2786,7 +2786,7 @@ if (!saved || !ownsAccount(owner)) return
 )}
       </main>
           {viewingRecipe && (
-  <div className="recipe-modal-overlay">
+  <div className="recipe-modal-overlay recipe-detail-overlay">
     <div className="recipe-modal">
   <button
     className="recipe-modal-close"

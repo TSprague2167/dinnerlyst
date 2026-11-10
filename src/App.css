@@ -1683,3 +1683,42 @@ select:focus {
   .pantry-view .pantry-recipe-grid { grid-template-columns: minmax(0,1fr); }
   .pantry-view .pantry-recipe-content { padding: 18px; }
 }
+
+/* Keep the recipe detail view within the phone viewport; leave meal swaps and desktop unchanged. */
+@media (max-width: 640px) {
+  .recipe-detail-overlay {
+    align-items: flex-start;
+    padding: 12px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .recipe-detail-overlay .recipe-modal {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    max-height: none;
+    overflow: visible;
+    padding: 16px;
+    overflow-wrap: anywhere;
+  }
+
+  .recipe-detail-overlay .recipe-modal-image {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    max-height: min(220px, 30svh);
+    object-fit: contain;
+  }
+
+  .recipe-detail-overlay .instruction-step,
+  .recipe-detail-overlay .instruction-step p {
+    min-width: 0;
+  }
+
+  .recipe-detail-overlay .instruction-step p {
+    flex: 1;
+    overflow-wrap: anywhere;
+  }
+}
