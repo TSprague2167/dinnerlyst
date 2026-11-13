@@ -1722,3 +1722,11 @@ select:focus {
     overflow-wrap: anywhere;
   }
 }
+
+/* Flexible dinner controls stay within the existing Plan layout. */
+.plan-page .dinner-count-control { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 16px; }
+.plan-page .dinner-count-control label, .plan-page .recommendation-dinner-actions label { font-weight: 600; color: #294d3c; }
+.plan-page .dinner-count-control select, .plan-page .recommendation-dinner-actions select { min-width: 0; max-width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #c9d0bf; border-radius: 10px; background: #fffdf8; color: #293a30; font: inherit; }
+.plan-page .dinner-add-button { margin-top: 18px; min-height: 44px; }
+.plan-page .recommendation-dinner-actions { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; min-width: 0; }
+.plan-page .recommendation-dinner-actions button { min-height: 44px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }

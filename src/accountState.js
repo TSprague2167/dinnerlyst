@@ -27,7 +27,11 @@ export function loadPlannerCache(storage, userId) {
   if (!userId) return emptyPlanner()
   try {
     const value = JSON.parse(storage.getItem(plannerCacheKey(userId)))
-    if (validPlannerCache(value, userId)) return { weeklyMeals: value.weeklyMeals, shoppingList: value.shoppingList, lockedDays: value.lockedDays }
+    if (validPlannerCache(value, userId)) return {
+      weeklyMeals: value.weeklyMeals, shoppingList: value.shoppingList, lockedDays: value.lockedDays,
+      ...(Number.isInteger(value.preferredDinnerCount) && value.preferredDinnerCount >= 1 && value.preferredDinnerCount <= 7
+        ? { preferredDinnerCount: value.preferredDinnerCount } : {}),
+    }
   } catch { /* Ignore invalid or inaccessible caches. */ }
   try { storage.removeItem(plannerCacheKey(userId)) } catch { /* Storage can be unavailable. */ }
   return emptyPlanner()

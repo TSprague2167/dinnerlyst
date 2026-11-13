@@ -106,6 +106,8 @@ function App() {
   const [planFeedback, setPlanFeedback] = useState(null)
   const weeklyMealsRef = useRef(weeklyMeals)
   const [lockedDays, setLockedDays] = useState([])
+  const [preferredDinnerCount, setPreferredDinnerCount] = useState(4)
+  const [recommendationTarget, setRecommendationTarget] = useState("")
   const [recipeUrl, setRecipeUrl] = useState("");
   const [searchTerm, setSearchTerm] = useState("")
   const [pantrySearch, setPantrySearch] = useState("")
@@ -210,6 +212,9 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
         setWeeklyMeals(planner.weeklyMeals)
         setShoppingList(planner.shoppingList)
         setLockedDays(planner.lockedDays)
+        // Existing users retain their seven-slot generation preference; never resize their cached plan.
+        setPreferredDinnerCount(planner.preferredDinnerCount ?? (planner.weeklyMeals.length ? 7 : 4))
+        setRecommendationTarget("")
         setPlanFeedback(null)
         if (nextId) setPlannerOwner(owner)
       }
@@ -305,8 +310,8 @@ useEffect(() => {
   useEffect(() => {
     if (!plannerOwner || !ownsAccount(plannerOwner)) return
     weeklyMealsRef.current = weeklyMeals
-    persistPlannerCache(plannerStorage(), plannerOwner, accountRef.current, { weeklyMeals, shoppingList, lockedDays })
-  }, [weeklyMeals, shoppingList, lockedDays, plannerOwner, ownsAccount])
+    persistPlannerCache(plannerStorage(), plannerOwner, accountRef.current, { weeklyMeals, shoppingList, lockedDays, preferredDinnerCount })
+  }, [weeklyMeals, shoppingList, lockedDays, preferredDinnerCount, plannerOwner, ownsAccount])
 
   useEffect(() => {
     let active = true
@@ -600,7 +605,7 @@ async function deleteRecipe(id) {
   if (!recipe) return
   const scheduledDays = weeklyMealsRef.current.filter(item => item.meal?.id === id).map(item => item.day)
   const confirmation = `Delete "${recipe.name}"? This cannot be undone.${scheduledDays.length
-    ? ` This will also remove it from your plan for ${scheduledDays.join(", ")} and unlock those days.` : ""}`
+    ? ` This will also remove it from your plan for ${scheduledDays.map(dinnerLabel).join(", ")} and unlock those dinners.` : ""}`
   if (!window.confirm(confirmation)) return
   const generation = recipeDraftGeneration.current
   try {
@@ -619,7 +624,7 @@ async function deleteRecipe(id) {
       setLockedDays(current => current.filter(day => !affectedDays.includes(day)))
       setShoppingList(previous => ownsAccount(owner)
         ? rebuildShoppingList(previous, previousMeals, updatedMeals, pantrySnapshotRef.current.items) : previous)
-      setPlanFeedback(`"${recipe.name}" was removed from ${affectedDays.join(", ")}. Those days are now empty and unlocked.`)
+      setPlanFeedback(`"${recipe.name}" was removed from ${affectedDays.map(day => `Dinner ${previousMeals.findIndex(item => item.day === day) + 1}`).join(", ")}. Those dinners are now empty and unlocked.`)
     }
     setViewingRecipe(current => current?.id === id ? null : current)
     setExpandedRecipeId(current => current === id ? null : current)
@@ -637,72 +642,84 @@ function toggleDayLock(day) {
     setLockedDays([...lockedDays, day])
   }
 }
+  function dinnerLabel(slot) {
+    const index = weeklyMeals.findIndex(item => item.day === slot)
+    return index >= 0 ? `Dinner ${index + 1}` : "Dinner"
+  }
+
+  function changeDinnerCount(value) {
+    if (!plannerOwner || !ownsAccount(plannerOwner)) return
+    const count = Number(value)
+    if (Number.isInteger(count) && count >= 1 && count <= 7) setPreferredDinnerCount(count)
+  }
+
+  function commitDinnerPlan(meals) {
+    const previousMeals = weeklyMealsRef.current
+    weeklyMealsRef.current = meals
+    setWeeklyMeals(meals)
+    setShoppingList(previous => rebuildShoppingList(previous, previousMeals, meals, pantryItems))
+    setPlanFeedback(null)
+  }
+
+  function addDinner() {
+    if (!plannerOwner || !ownsAccount(plannerOwner)) return
+    const meals = weeklyMealsRef.current
+    if (meals.length >= 7) return
+    const used = new Set(meals.filter(item => item.meal).map(item => item.meal.id))
+    const candidates = recipes.filter(recipe => !used.has(recipe.id) && meetsPlanningPreferences(recipe))
+    if (!candidates.length) {
+      setPlanFeedback("No additional suitable recipe is available without repeating a planned dinner. Your plan was kept unchanged.")
+      return
+    }
+    const day = daysOfWeek.find(slot => !meals.some(item => item.day === slot))
+    commitDinnerPlan([...meals, { day, meal: candidates[Math.floor(Math.random() * candidates.length)] }])
+  }
+
+  function removeDinner(slot) {
+    if (!plannerOwner || !ownsAccount(plannerOwner)) return
+    const meals = weeklyMealsRef.current
+    if (!meals.some(item => item.day === slot)) return
+    if (lockedDays.includes(slot) && !window.confirm(`Remove locked ${dinnerLabel(slot)}? This removes its recipe from the plan and unlocks it.`)) return
+    commitDinnerPlan(meals.filter(item => item.day !== slot))
+    setLockedDays(current => current.filter(day => day !== slot))
+    if (recommendationTarget === slot) setRecommendationTarget("")
+    setSwipingDay(null)
+    setSwipeOffsetX(0)
+  }
+
   function generateWeeklyMeals() {
+    if (!plannerOwner || !ownsAccount(plannerOwner)) return
     pendingGenerateScroll.current = null
-    const randomMeals = []
-    const usedRecipeIds = new Set(
-      weeklyMeals
-        .filter((item) => lockedDays.includes(item.day) && item.meal)
-        .map((item) => item.meal.id)
-    )
-    if (recipes.length === 0) {
+    if (weeklyMeals.length > preferredDinnerCount) {
+      setPlanFeedback(`Your plan has ${weeklyMeals.length} dinners. Remove specific dinners to reach ${preferredDinnerCount}, or select a larger dinner count. No dinners were removed.`)
+      return
+    }
+    if (!recipes.length) {
       setPlanFeedback("Dinnerlyst does not currently have recipes available to build the plan. Your existing plan was kept unchanged.")
       return
     }
-    let assignedMeals = 0
-    let preservedLockedDays = 0
-    let unfilledSelections = 0
-
-    const meals = daysOfWeek.map((day) => {
-
-  const existingMeal = weeklyMeals.find(
-    (meal) => meal.day === day
-  )
-
-  if (lockedDays.includes(day) && existingMeal) {
-  preservedLockedDays += 1
-  return existingMeal
-}
-
-  const availableRecipes = recipes.filter(
-  (recipe) => !usedRecipeIds.has(recipe.id)
-)
-const matchingRecipes = availableRecipes.filter(meetsPlanningPreferences)
-
-const recipePool = matchingRecipes
-if (recipePool.length === 0) {
-  unfilledSelections += 1
-  return { day, meal: null }
-}
-
-const randomIndex = Math.floor(
-  Math.random() * recipePool.length
-)
-
-const selectedRecipe = recipePool[randomIndex]
-
-usedRecipeIds.add(selectedRecipe.id)
-assignedMeals += 1
-
-return {
-  day,
-  meal: selectedRecipe
-}
-})
-
-    const filledDays = meals.filter(item => item.meal).length
-    setPlanFeedback(filledDays === 7 ? null : unfilledSelections === 0
-      ? `${filledDays} of 7 days are currently filled. Some locked days have no meal. Locked days were kept unchanged; unlock an empty day before generating again.`
-      : `${filledDays} of 7 days are currently filled. ${assignedMeals === 0 ? "No additional suitable recipes were available. " : ""}Dinnerlyst couldn't find enough different recipes matching your preferences and restrictions without repeating planned recipes to fill the remaining unlocked days.${preservedLockedDays ? " Locked days were kept unchanged." : ""}`)
-    const assignmentsChanged = meals.some(item =>
-      (item.meal?.id ?? null) !== (weeklyMeals.find(previous => previous.day === item.day)?.meal?.id ?? null)
-    )
-    if (assignedMeals > 0 && assignmentsChanged && activeTab === "planner" &&
-      daysOfWeek.some(day => !lockedDays.includes(day))) {
-      pendingGenerateScroll.current = { owner: plannerOwner, meals }
+    const slots = weeklyMeals.map(item => item.day)
+    for (const slot of daysOfWeek) {
+      if (slots.length >= preferredDinnerCount) break
+      if (!slots.includes(slot)) slots.push(slot)
     }
-    setWeeklyMeals(meals)
-    createShoppingList(meals)
+    const usedRecipeIds = new Set(weeklyMeals.filter(item => lockedDays.includes(item.day) && item.meal).map(item => item.meal.id))
+    const meals = slots.map(day => {
+      const existing = weeklyMeals.find(item => item.day === day)
+      if (lockedDays.includes(day) && existing) return existing
+      const pool = recipes.filter(recipe => !usedRecipeIds.has(recipe.id) && meetsPlanningPreferences(recipe))
+      if (!pool.length) return { day, meal: null }
+      const meal = pool[Math.floor(Math.random() * pool.length)]
+      usedRecipeIds.add(meal.id)
+      return { day, meal }
+    })
+    if (meals.some(item => !item.meal)) {
+      setPlanFeedback(`Could not fill all ${preferredDinnerCount} dinners with different recipes matching your preferences and restrictions. Your existing plan and locked dinners were kept unchanged. Try fewer dinners or unlock an empty dinner.`)
+      return
+    }
+    const changed = meals.length !== weeklyMeals.length || meals.some(item => item.meal.id !== weeklyMeals.find(old => old.day === item.day)?.meal?.id)
+    if (changed && activeTab === "planner") pendingGenerateScroll.current = { owner: plannerOwner, meals }
+    commitDinnerPlan(meals)
   }
 function handleTouchStart(e, day) {
   setSwipingDay(day)
@@ -731,17 +748,15 @@ function handleTouchEnd(e, day) {
   setSwipingDay(null)
 }
  function regenerateMeal(dayToChange) {
-  console.log("dayToChange:", dayToChange)
- console.log("lockedDays:", lockedDays) 
   if (recipes.length === 0) {
     setPlanFeedback(lockedDays.includes(dayToChange)
-      ? `${dayToChange} is locked. Unlock it to choose another meal.`
+      ? `${dinnerLabel(dayToChange)} is locked. Unlock it to choose another meal.`
       : "Dinnerlyst does not currently have recipes available to choose an alternative. Your existing plan was kept unchanged.")
     return
   }
 
   if (lockedDays.includes(dayToChange)) {
-    setPlanFeedback(`${dayToChange} is locked. Unlock it to choose another meal.`)
+    setPlanFeedback(`${dinnerLabel(dayToChange)} is locked. Unlock it to choose another meal.`)
     return
   }
   const currentMeal = weeklyMeals.find(
@@ -799,58 +814,45 @@ if (recipePool.length === 0) return item
 })
 
   setPlanFeedback(replacedMeal ? null :
-    `No alternative recipe is available for ${dayToChange} that matches your preferences and restrictions without repeating another planned meal. ${currentMeal ? "Your current meal was kept." : "Your plan was kept unchanged."}`)
+    `No alternative recipe is available for ${dinnerLabel(dayToChange)} that matches your preferences and restrictions without repeating another planned meal. ${currentMeal ? "Your current meal was kept." : "Your plan was kept unchanged."}`)
   setWeeklyMeals(updatedMeals)
   createShoppingList(updatedMeals)
 }
 function meetsPlanningPreferences(recipe) {
   return isPlanningEligible(recipe, onboardingAnswers, userId)
 }
-function cookTonight(recipe) {
-  if (!recipe) return
-
-  const today = new Date().toLocaleDateString("en-US", {
-    weekday: "long"
-  })
-
-  const todayExists = weeklyMeals.some((item) => item.day === today)
-
-  if (!todayExists) {
-    alert("Generate your weekly plan first.")
-    return
-  }
-
-  if (lockedDays.includes(today)) {
-    alert("Tonight's meal is locked. Unlock it before changing it.")
-    return
-  }
-  // Recheck the current library and preferences instead of trusting a displayed snapshot.
+function cookTonight(recipe, destination) {
+  if (!recipe || !plannerOwner || !ownsAccount(plannerOwner)) return
   const currentRecipe = recipes.find(item => item.id === recipe.id)
   if (!currentRecipe || !meetsPlanningPreferences(currentRecipe)) {
     alert("This recipe no longer matches your meal preferences or restrictions.")
     return
   }
-  if (weeklyMeals.some(item => item.day !== today && item.meal?.id === currentRecipe.id)) {
-    alert("This recipe is already planned for another day.")
+  if (!destination) {
+    alert("Choose Add as Dinner or select a dinner to replace.")
     return
   }
-  if (weeklyMeals.some(item => item.day === today && item.meal?.id === currentRecipe.id)) {
-    alert("This recipe is already planned for tonight.")
+  const meals = weeklyMealsRef.current
+  if (destination === "add" && meals.length >= 7) {
+    alert("Your plan already has seven dinners. Choose a dinner to replace or remove one first.")
     return
   }
-
-  const updatedMeals = weeklyMeals.map((item) =>
-    item.day === today
-      ? {
-          ...item,
-          meal: currentRecipe
-        }
-      : item
-  )
-
-  setPlanFeedback(null)
-  setWeeklyMeals(updatedMeals)
-  createShoppingList(updatedMeals)
+  if (destination !== "add" && !meals.some(item => item.day === destination)) {
+    alert("That dinner is no longer in your plan. Choose a dinner to replace.")
+    return
+  }
+  if (destination !== "add" && lockedDays.includes(destination)) {
+    alert(`${dinnerLabel(destination)} is locked. Unlock it before replacing it.`)
+    return
+  }
+  if (meals.some(item => item.meal?.id === currentRecipe.id)) {
+    alert("This recipe is already planned as a dinner.")
+    return
+  }
+  const slot = destination === "add" ? daysOfWeek.find(day => !meals.some(item => item.day === day)) : destination
+  commitDinnerPlan(destination === "add" ? [...meals, { day: slot, meal: currentRecipe }] :
+    meals.map(item => item.day === slot ? { ...item, meal: currentRecipe } : item))
+  setRecommendationTarget("")
 }
 async function changePantryItem(item, remove = false, clearInput = false) {
   const owner = plannerOwner
@@ -925,10 +927,9 @@ async function changeShoppingCheck(ingredient, checked) {
 function createShoppingList(meals) {
   setShoppingList((previous) => rebuildShoppingList(previous, weeklyMeals, meals, pantryItems))
 }
-const today = new Date().toLocaleDateString("en-US", { weekday: "long" })
-const plannedOnOtherDays = new Set(weeklyMeals.filter(item => item.day !== today).map(item => item.meal?.id))
+const plannedRecipeIds = new Set(weeklyMeals.map(item => item.meal?.id))
 const pantryMatches = recipes
-  .filter(recipe => meetsPlanningPreferences(recipe) && !plannedOnOtherDays.has(recipe.id))
+  .filter(recipe => meetsPlanningPreferences(recipe) && !plannedRecipeIds.has(recipe.id))
   .map(recipe => getPantryRecipeMatch(recipe, pantryItems))
   .filter(recipe => recipe.totalCount > 0 && recipe.matchedCount > 0)
   .sort((a, b) => b.matchPercentage - a.matchPercentage)
@@ -1900,11 +1901,22 @@ if (!saved || !ownsAccount(owner)) return
         <div className="plan-intro-copy">
           <p className="plan-eyebrow">A little planning. A lovely week.</p>
           <h2 id="planning-title">Good food.<br />One less thing to think about.</h2>
-          <p className="plan-intro-description">Make room for the meals you look forward to. Your week of dinners and shopping list start here.</p>
+          <p className="plan-intro-description">Make room for the meals you look forward to. Your dinners and shopping list start here.</p>
+        <div className="dinner-count-control">
+          <label htmlFor="dinner-count">How many dinners?</label>
+          <select id="dinner-count" aria-describedby={preferredDinnerCount < weeklyMeals.length ? "dinner-count-help" : undefined} value={preferredDinnerCount} onChange={event => changeDinnerCount(event.target.value)}>
+            {[1, 2, 3, 4, 5, 6, 7].map(count => <option key={count} value={count}>{count} {count === 1 ? "dinner" : "dinners"}</option>)}
+          </select>
+        </div>
+        {preferredDinnerCount < weeklyMeals.length && (
+          <p id="dinner-count-help" className="plan-intro-note" role="status">
+            Your plan still contains {weeklyMeals.length} dinners. Remove specific dinner cards to reach {preferredDinnerCount}. No dinners have been removed.
+          </p>
+        )}
         <button className="generate-button" onClick={generateWeeklyMeals}>
           Generate My Meal Plan
         </button>
-        <p className="plan-intro-note">Seven days of inspiration. Shopping list included.</p>
+        <p className="plan-intro-note">Choose 1–7 dinners. No days to assign. Shopping list included.</p>
         </div>
         {Boolean(weeklyMeals.find(item => item.meal?.image_url)?.meal || recipes.find(recipe => recipe.image_url)) && (
           <div className="plan-intro-photo">
@@ -2085,18 +2097,18 @@ if (!saved || !ownsAccount(owner)) return
         {activeTab === "planner" && (
 <section className="card weekly-menu" aria-labelledby="weekly-menu-title">
   <div ref={weeklyResultsRef} className="section-header">
-  <p className="plan-eyebrow">Your table, all week</p>
-  <h2 id="weekly-menu-title">This Week’s Menu</h2>
-  <p>Your planned meals at a glance.</p>
+  <p className="plan-eyebrow">Your table, your pace</p>
+  <h2 id="weekly-menu-title">Your Dinner Plan</h2>
+  <p>{weeklyMeals.length} {weeklyMeals.length === 1 ? "dinner" : "dinners"} planned</p>
 </div>
 
-          {weeklyMeals.length === 0 && <p className="empty">Generate meals to see your week.</p>}
+          {weeklyMeals.length === 0 && <p className="empty">Generate a plan or add a dinner to get started.</p>}
           <div className="meal-grid">
 
           {weeklyMeals.map((item, index) => item.meal ? (
             <div
   className={`meal-card ${lockedDays.includes(item.day) ? "meal-card-locked" : ""}`}
-  key={index}
+  key={item.day}
   style={{
   transform:
     swipingDay === item.day
@@ -2112,7 +2124,7 @@ if (!saved || !ownsAccount(owner)) return
   onTouchEnd={(e) => handleTouchEnd(e, item.day)}
 >
   <div className="meal-info">
-    <span className="meal-day">{item.day}</span>
+    <span className="meal-day">Dinner {index + 1}</span>
    <div className="meal-media">
    {item.meal.image_url ? (
   <img
@@ -2155,17 +2167,24 @@ if (!saved || !ownsAccount(owner)) return
     >
       {lockedDays.includes(item.day) ? "Unlock" : "Lock"}
     </button>
+    <button className="small-button" type="button" aria-label={`Remove Dinner ${index + 1}`} onClick={() => removeDinner(item.day)}>Remove</button>
   </div>
 </div>
           ) : (
-  <div className="meal-card" key={index}>
+  <div className="meal-card" key={item.day}>
     <div className="meal-info">
-      <span className="meal-day">{item.day}</span>
+      <span className="meal-day">Dinner {index + 1}</span>
       <p>No matching meal found</p>
+    </div>
+    <div className="meal-actions">
+      <button className="small-button" type="button" onClick={() => regenerateMeal(item.day)}>Regenerate</button>
+      <button className="small-button" type="button" onClick={() => toggleDayLock(item.day)}>{lockedDays.includes(item.day) ? "Unlock" : "Lock"}</button>
+      <button className="small-button" type="button" aria-label={`Remove Dinner ${index + 1}`} onClick={() => removeDinner(item.day)}>Remove</button>
     </div>
   </div>
 ))}
           </div>
+<button className="small-button dinner-add-button" type="button" disabled={weeklyMeals.length >= 7} onClick={addDinner}>+ Add Dinner</button>
 {swapOptions && (
   <div className="recipe-modal-overlay">
     <div className="recipe-modal">
@@ -2284,13 +2303,18 @@ if (!saved || !ownsAccount(owner)) return
     <p role="status">{bestMatchFeedback.message}</p>
 )}
 
-{pantryMatches[0]?.missingIngredients?.length === 0 && (
-  <button
-    className="cook-button"
-    onClick={() => cookTonight(pantryMatches[0])}
-  >
-    Cook Tonight
-  </button>
+{pantryMatches[0] && (
+  <div className="recommendation-dinner-actions">
+    <button className="cook-button" type="button" disabled={weeklyMeals.length >= 7} onClick={() => cookTonight(pantryMatches[0], "add")}>Add as Dinner</button>
+    {weeklyMeals.length > 0 && <>
+      <label htmlFor="recommendation-dinner">Or choose a dinner to replace</label>
+      <select id="recommendation-dinner" value={recommendationTarget} onChange={event => setRecommendationTarget(event.target.value)}>
+        <option value="">Choose a dinner</option>
+        {weeklyMeals.map((item, index) => <option key={item.day} value={item.day} disabled={lockedDays.includes(item.day)}>Dinner {index + 1}{lockedDays.includes(item.day) ? " (locked)" : ""}</option>)}
+      </select>
+      <button className="cook-button" type="button" disabled={!recommendationTarget || lockedDays.includes(recommendationTarget)} onClick={() => cookTonight(pantryMatches[0], recommendationTarget)}>Replace Selected Dinner</button>
+    </>}
+  </div>
 )}
 </div>
 
@@ -2359,13 +2383,13 @@ if (!saved || !ownsAccount(owner)) return
           </div>
           {shoppingReady && weeklyMeals.length === 0 && (
             <div className="shopping-state" role="status">
-              <h3>No weekly plan yet</h3>
+              <h3>No dinner plan yet</h3>
               <p>{currentShoppingItems.length > 0 ? "You can shop these added items now, or plan meals to build the rest of your list." : "Plan your meals to bring your grocery list together."}</p>
               <button type="button" className="small-button" onClick={() => setActiveTab("planner")}>Go to Plan</button>
             </div>
           )}
-          {shoppingReady && weeklyMeals.length > 0 && plannedMealCount < 7 && (
-            <p className="shopping-state" role="status">Your plan has {plannedMealCount} of 7 meals. This list covers filled days and any added items.</p>
+          {shoppingReady && weeklyMeals.length > 0 && plannedMealCount < weeklyMeals.length && (
+            <p className="shopping-state" role="status">Your plan has {plannedMealCount} of {weeklyMeals.length} dinners filled. This list covers filled dinners and any added items.</p>
           )}
           {shoppingReady && currentShoppingItems.length > 0 && checkedShoppingCount === currentShoppingItems.length && (
             <p className="shopping-state shopping-complete" role="status">All set — every visible grocery item is checked.</p>

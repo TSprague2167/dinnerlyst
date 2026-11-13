@@ -123,7 +123,7 @@ function appHarness(storage = memoryStorage(), weekday = null, callbackType = nu
     storage: { from: () => ({ upload: path => request({ table: 'images', method: 'upload', path }), getPublicUrl: path => ({ data: { publicUrl: path } }) }) },
   }
   let source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8').replace(/^import .*\n/gm, '').replace('export default App', '')
-  source = source.replace('  if (!authReady ||', '  observe({ session, weeklyMeals, shoppingList, lockedDays, recipes, recipeName, ingredientRows, instructions, dietTags, selectedCategories, editingRecipeId, recipeUrl, imageUrl, imageFile, viewingRecipe, expandedRecipeId, swapOptions, pantryItems, checkedShoppingItems, onboardingAnswers, onboardingStep, searchTerm, pantrySearch, activeTab, selectedCategory, swipingDay, generateWeeklyMeals, regenerateMeal, cookTonight, getRecipes, addRecipe, importRecipeFromUrl, deleteRecipe, beginRecipeEdit, cancelRecipeEdit, recipeSaving, logout, recipeLoad, pantryLoad, checkedLoad, importing, changePantryItem, changeShoppingCheck, loadPantryItems, loadCheckedShoppingItems, passwordSetupRequired, passwordSetupStatus, completePasswordSetup, newPassword, confirmPassword });\n  if (!authReady ||')
+  source = source.replace('  if (!authReady ||', '  observe({ session, weeklyMeals, shoppingList, lockedDays, recipes, recipeName, ingredientRows, instructions, dietTags, selectedCategories, editingRecipeId, recipeUrl, imageUrl, imageFile, viewingRecipe, expandedRecipeId, swapOptions, pantryItems, checkedShoppingItems, onboardingAnswers, onboardingStep, searchTerm, pantrySearch, activeTab, selectedCategory, swipingDay, preferredDinnerCount, recommendationTarget, changeDinnerCount, addDinner, removeDinner, toggleDayLock, generateWeeklyMeals, regenerateMeal, cookTonight, getRecipes, addRecipe, importRecipeFromUrl, deleteRecipe, beginRecipeEdit, cancelRecipeEdit, recipeSaving, logout, recipeLoad, pantryLoad, checkedLoad, importing, changePantryItem, changeShoppingCheck, loadPantryItems, loadCheckedShoppingItems, passwordSetupRequired, passwordSetupStatus, completePasswordSetup, newPassword, confirmPassword });\n  if (!authReady ||')
   const helpers = { ...account, ...shopping, ...ingredients, ...pantry, ...shoppingDisplay }
   const code = transformSync('App.jsx', source, { jsx: { runtime: 'classic' } }).code
   const App = new Function('React', 'useState', 'useRef', 'useEffect', 'useCallback', 'initialAuthCallbackType', 'supabase', 'observe', 'window', 'alert', 'Date', ...Object.keys(helpers), code + '\nreturn App')(
@@ -153,7 +153,8 @@ function appHarness(storage = memoryStorage(), weekday = null, callbackType = nu
   async function pump() { await new Promise(resolve => setImmediate(resolve)); flush(); await new Promise(resolve => setImmediate(resolve)); flush() }
   function emitSession(event, nextSession, render = true) { listener(event, nextSession); if (render) flush() }
   function emit(id, render = true, user = {}) { emitSession('SIGNED_IN', id ? { user: { id, ...user }, token: Math.random() } : null, render) }
-  function nodes(value = tree, result = []) {
+  function nodes(value, result = []) {
+    if (arguments.length === 0) value = tree
     if (Array.isArray(value)) value.forEach(item => nodes(item, result))
     else if (value && typeof value === 'object') { result.push(value); nodes(value.props?.children, result) }
     return result
@@ -372,7 +373,7 @@ test('editing state and personal recipe mutation ownership are isolated across a
 
 
 const supportedRestrictions = ['Gluten-Free', 'Dairy-Free', 'Peanut-Free', 'Tree Nut-Free', 'Shellfish-Free', 'Egg-Free', 'Soy-Free']
-const nodeText = node => typeof node === 'string' ? node : Array.isArray(node) ? node.map(nodeText).join('') : nodeText(node?.props?.children || '')
+const nodeText = node => typeof node === 'number' ? String(node) : typeof node === 'string' ? node : Array.isArray(node) ? node.map(nodeText).join('') : nodeText(node?.props?.children || '')
 const buttonNamed = (app, label) => app.nodes().find(node => node.type === 'button' && nodeText(node) === label)
 function clickButton(app, label) {
   const button = buttonNamed(app, label)
@@ -462,7 +463,7 @@ test('Generate and Regenerate enforce each recognized restriction and preserve l
     assert.equal(app.state.weeklyMeals[0].meal.id, 2, 'no eligible replacement retains current meal')
     app.state.generateWeeklyMeals(); app.flush()
     assert.deepEqual(app.state.weeklyMeals.filter(item => item.meal).map(item => item.meal.id), [2])
-    assert.equal(app.state.weeklyMeals.filter(item => !item.meal).length, 6)
+    assert.equal(app.state.weeklyMeals.filter(item => !item.meal).length, 0, 'shortage does not replace an existing plan with empty slots')
     const lockedStorage = memoryStorage()
     account.persistPlannerCache(lockedStorage, owner, owner, {
       weeklyMeals: [{ day: 'Monday', meal: safe }], shoppingList: {}, lockedDays: ['Monday']
@@ -524,7 +525,7 @@ test('Pantry opens exactly one shared modal with exact recipe contents; closing 
   const modal = detailModals(app)[0], nodes = app.nodes(modal)
   assert.equal(nodes.find(node => node.type === 'h2').props.children[0], 'Egg supper')
   assert.deepEqual(nodes.filter(node => node.type === 'li').map(nodeText), ['eggs', 'rice'])
-  assert.deepEqual(nodes.filter(node => node.props?.className === 'instruction-step').map(nodeText), ['Beat eggs.', 'Cook with rice.'])
+  assert.deepEqual(nodes.filter(node => node.props?.className === 'instruction-step').map(nodeText), ['1Beat eggs.', '2Cook with rice.'])
   assert.deepEqual(nodes.filter(node => node.props?.className === 'step-number').map(node => node.props.children[0]), [1, 2])
   assert.equal(nodes.find(node => node.type === 'img').props.src, 'https://example.com/eggs.jpg')
   closeDetails(app)
@@ -659,7 +660,7 @@ test('Best Match uses conservative names and supported aliases without changing 
   for (const name of ['Cauliflower rice', 'rice vinegar']) {
     const app = await bestApp({ library: [bestRecipe(1, name, [name])], pantryNames: ['Rice'] })
     assert.ok(nodeText(bestCard(app)).includes('No suitable recommendation right now'))
-    assert.equal(bestButton(app, 'Cook Tonight'), undefined)
+    assert.equal(bestButton(app, 'Add as Dinner'), undefined)
   }
   const alias = await bestApp({ library: [bestRecipe(2, 'Egg meal', ['eggs'])], pantryNames: [' EGG '] })
   assert.ok(nodeText(bestCard(alias)).includes('You can make this!'))
@@ -692,12 +693,12 @@ test('Best Match and Cook Tonight reject other-day duplicates, locks, stale reci
   const duplicate = await bestApp({ library: [old, candidate], meals, pantryNames: ['Eggs'] })
   assert.ok(nodeText(bestCard(duplicate)).includes('No suitable recommendation right now'))
   const before = structuredClone(duplicate.state.weeklyMeals)
-  duplicate.state.cookTonight(candidate); duplicate.flush()
+  duplicate.state.cookTonight(candidate, 'Thursday'); duplicate.flush()
   assert.deepEqual(duplicate.state.weeklyMeals, before)
-  assert.ok(duplicate.alerts.at(-1).includes('another day'))
+  assert.ok(duplicate.alerts.at(-1).includes('already planned'))
   const locked = await bestApp({ library: [old, candidate], meals: [meals[0]], locks: ['Thursday'], pantryNames: ['Eggs'] })
   const lockedBefore = structuredClone(locked.state.weeklyMeals)
-  bestButton(locked, 'Cook Tonight').props.onClick(); locked.flush()
+  locked.state.cookTonight(candidate, 'Thursday'); locked.flush()
   assert.deepEqual(locked.state.weeklyMeals, lockedBefore)
   assert.deepEqual(locked.state.lockedDays, ['Thursday'])
   assert.ok(locked.alerts.at(-1).includes('locked'))
@@ -706,40 +707,36 @@ test('Best Match and Cook Tonight reject other-day duplicates, locks, stale reci
     const app = await bestApp({ library: [old, invalid], meals: [meals[0]], preferences: { allergies: ['Peanut-Free'], diet_preferences: ['Vegan'] }, pantryNames: ['Eggs'] })
     const unchanged = structuredClone(app.state.weeklyMeals)
     // Supplying a stale or forged eligible object must not bypass the current library tags.
-    app.state.cookTonight(candidate); app.flush()
+    app.state.cookTonight(candidate, 'Thursday'); app.flush()
     assert.deepEqual(app.state.weeklyMeals, unchanged)
-    app.state.cookTonight({ ...candidate, id: 999 }); app.flush()
+    app.state.cookTonight({ ...candidate, id: 999 }, 'Thursday'); app.flush()
     assert.deepEqual(app.state.weeklyMeals, unchanged)
   }
   const changed = await bestApp({ library: [old, candidate], meals: [meals[0]], pantryNames: ['Eggs'] })
   clickButton(changed, '⚙️ Settings / Preferences'); clickButton(changed, 'Dairy-Free')
-  changed.state.cookTonight(candidate); changed.flush()
+  changed.state.cookTonight(candidate, 'Thursday'); changed.flush()
   assert.equal(changed.state.weeklyMeals[0].meal.id, old.id)
 })
 
-test('Cook Tonight targets today only, rebuilds shopping, persists, and safely handles already-planned or missing days', async () => {
-  const old = { ...bestRecipe(1, 'Old meal', []), structured_ingredients: [{ amount: '1', unit: 'cup', ingredient: 'Rice' }] }
-  const other = bestRecipe(3, 'Other meal', ['Milk'])
-  const candidate = bestRecipe(2, 'Egg meal', ['Eggs'])
-  const app = await bestApp({ library: [old, candidate, other], meals: [{ day: 'Thursday', meal: old }, { day: 'Monday', meal: other }], pantryNames: ['Eggs'], shoppingList: { Other: [{ key: 'paper towels', label: 'paper towels', extra: true }] } })
-  const monday = structuredClone(app.state.weeklyMeals.find(item => item.day === 'Monday'))
-  bestButton(app, 'Cook Tonight').props.onClick(); app.flush()
-  assert.equal(app.state.weeklyMeals.find(item => item.day === 'Thursday').meal.id, candidate.id)
-  assert.deepEqual(app.state.weeklyMeals.find(item => item.day === 'Monday'), monday)
-  const visible = Object.values(app.state.shoppingList).flat().filter(item => !item.pantryHidden).map(item => item.label)
-  assert.ok(visible.includes('paper towels'))
-  assert.ok(visible.includes('milk (1)'))
-  assert.equal(visible.some(label => label.includes('Rice') || label.includes('Eggs')), false)
-  assert.equal(JSON.parse(app.storage.getItem(account.plannerCacheKey('A'))).weeklyMeals.find(item => item.day === 'Thursday').meal.id, candidate.id)
-  const unchanged = structuredClone(app.state.weeklyMeals)
+test('recommendation replacement requires an explicit destination and preserves other dinners, shopping and cache', async () => {
+  const old = {...bestRecipe(1, 'Old meal', []), structured_ingredients:[{amount:'1',unit:'cup',ingredient:'Rice'}]}
+  const other = bestRecipe(3,'Other meal',['Milk']), candidate = bestRecipe(2,'Egg meal',['Eggs'])
+  const app = await bestApp({library:[old,other,candidate],meals:[{day:'Thursday',meal:old},{day:'Monday',meal:other}],pantryNames:['Eggs'],shoppingList:{Other:[{key:'paper towels',label:'paper towels',extra:true}]}})
+  const before = structuredClone(app.state.weeklyMeals)
   app.state.cookTonight(candidate); app.flush()
-  assert.deepEqual(app.state.weeklyMeals, unchanged)
-  assert.ok(app.alerts.at(-1).includes('already planned for tonight'))
-  const noToday = await bestApp({ library: [candidate, other], meals: [{ day: 'Monday', meal: other }], pantryNames: ['Eggs'] })
-  const before = structuredClone(noToday.state.weeklyMeals)
-  bestButton(noToday, 'Cook Tonight').props.onClick(); noToday.flush()
-  assert.deepEqual(noToday.state.weeklyMeals, before)
-  assert.deepEqual(noToday.alerts, ['Generate your weekly plan first.'])
+  assert.deepEqual(app.state.weeklyMeals,before, 'no implicit weekday replacement')
+  app.state.cookTonight(candidate,'Thursday'); app.flush()
+  assert.equal(app.state.weeklyMeals[0].meal.id, candidate.id)
+  assert.deepEqual(app.state.weeklyMeals[1], before[1])
+  const visible=Object.values(app.state.shoppingList).flat().filter(shopping.isShoppingItemVisible).map(item=>item.label)
+  assert.ok(visible.includes('paper towels')); assert.ok(visible.includes('milk (1)'))
+  assert.equal(visible.some(label=>label.includes('Rice')||label.includes('Eggs')),false)
+  assertPlannerCacheMatches(app)
+  const changed=structuredClone(app.state.weeklyMeals)
+  app.state.cookTonight(candidate,'add');app.flush();assert.deepEqual(app.state.weeklyMeals,changed)
+  const fresh=await bestApp({library:[candidate],pantryNames:['Eggs']})
+  bestButton(fresh,'Add as Dinner').props.onClick();fresh.flush()
+  assert.equal(fresh.state.weeklyMeals[0].meal.id,candidate.id)
 })
 
 test('Best Match never claims full readiness for rounded 100 percent or empty recipes', async () => {
@@ -749,7 +746,7 @@ test('Best Match never claims full readiness for rounded 100 percent or empty re
   assert.equal(nodeText(bestCard(app)).includes('You can make this!'), false)
   assert.ok(nodeText(bestCard(app)).includes('99% Ready'))
   assert.ok(nodeText(bestCard(app)).includes('Rice'))
-  assert.equal(bestButton(app, 'Cook Tonight'), undefined)
+  assert.ok(bestButton(app, 'Add as Dinner'), 'a partially stocked recipe may still be planned')
   const empty = await bestApp({ library: [bestRecipe(2, 'Empty', [])], pantryNames: ['Eggs'] })
   assert.ok(nodeText(bestCard(empty)).includes('No suitable recommendation right now'))
 })
@@ -967,6 +964,7 @@ test('shared recipes retain inline viewing and planning eligibility without pers
   assert.equal(app.state.editingRecipeId, null)
   assert.equal(app.confirmations.length, 0)
   assert.equal(app.requests.some(req => req.method === 'delete'), false)
+  app.state.changeDinnerCount(2); app.flush()
   app.state.generateWeeklyMeals(); app.flush()
   assert.ok(app.state.weeklyMeals.some(item => item.meal?.id === 101))
 })
@@ -1164,7 +1162,7 @@ test('full Generate clears stale shortage feedback and produces seven unique eli
   const library = Array.from({ length: 7 }, (_, at) => eligibleMeal(at + 1))
   const app = await bestApp({ library, preferences: shortagePreferences, meals: library.map((meal, at) => ({ day: ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'][at], meal })) })
   app.state.regenerateMeal('Tuesday'); app.flush()
-  assert.ok(shortageText(app).includes('No alternative recipe is available for Tuesday'))
+  assert.ok(shortageText(app).includes('No alternative recipe is available for Dinner 2'))
   app.state.generateWeeklyMeals(); app.flush()
   assert.equal(app.state.weeklyMeals.length, 7)
   assert.equal(new Set(app.state.weeklyMeals.map(item => item.meal.id)).size, 7)
@@ -1172,32 +1170,17 @@ test('full Generate clears stale shortage feedback and produces seven unique eli
   assertPlannerCacheMatches(app)
 })
 
-test('partial Generate explains filled count and next steps, preserves locks, filters and shopping/cache semantics', async () => {
-  const locked = bestRecipe(99, 'Locked incompatible meal', ['LockedIngredient'])
-  const old = bestRecipe(100, 'Old unlocked meal', ['OldIngredient'])
-  const app = await bestApp({ library: [locked, old, eligibleMeal(1), eligibleMeal(2)], preferences: shortagePreferences,
-    meals: [{ day: 'Monday', meal: locked }, { day: 'Tuesday', meal: old }], locks: ['Monday'],
-    shoppingList: { Other: [{ key: 'paper towels', label: 'paper towels', extra: true }] } })
-  const lockedBefore = structuredClone(app.state.weeklyMeals[0])
-  app.state.generateWeeklyMeals(); app.flush()
-  assert.equal(app.state.weeklyMeals.filter(item => item.meal).length, 3)
-  assert.deepEqual(app.state.weeklyMeals[0], lockedBefore)
-  assert.deepEqual(app.state.lockedDays, ['Monday'])
-  assert.equal(new Set(app.state.weeklyMeals.filter(item => item.meal).map(item => item.meal.id)).size, 3)
-  for (const item of app.state.weeklyMeals.slice(1).filter(item => item.meal)) {
-    assert.ok(item.meal.diet_tags.includes('Vegan')); assert.ok(item.meal.diet_tags.includes('Peanut-Free'))
-  }
-  assert.equal(app.state.weeklyMeals.some(item => item.meal?.id === 100), false)
-  assert.ok(shortageText(app).includes('3 of 7 days are currently filled.'))
-  assert.ok(shortageText(app).includes('preferences and restrictions without repeating planned recipes'))
-  assert.ok(shortageText(app).includes('Locked days were kept unchanged.'))
-  assert.equal(app.nodes().filter(node => node.type === 'p' && nodeText(node) === 'No matching meal found').length, 4)
-  const labels = Object.values(app.state.shoppingList).flat().map(item => item.label)
-  assert.ok(labels.includes('paper towels'))
-  assert.equal(labels.some(label => label.includes('OldIngredient')), false)
+test('insufficient generation preserves every existing dinner, lock, shopping item and cache', async () => {
+  const locked=bestRecipe(99,'Locked incompatible meal',['LockedIngredient']),old=bestRecipe(100,'Old unlocked meal',['OldIngredient'])
+  const app=await bestApp({library:[locked,old,eligibleMeal(1),eligibleMeal(2)],preferences:shortagePreferences,meals:[{day:'Monday',meal:locked},{day:'Tuesday',meal:old}],locks:['Monday'],shoppingList:{Other:[{key:'paper towels',label:'paper towels',extra:true}]}})
+  const before=structuredClone({meals:app.state.weeklyMeals,shopping:app.state.shoppingList,locks:app.state.lockedDays})
+  app.state.generateWeeklyMeals();app.flush()
+  assert.deepEqual({meals:app.state.weeklyMeals,shopping:app.state.shoppingList,locks:app.state.lockedDays},before)
+  assert.ok(shortageText(app).includes('Could not fill all 7 dinners'))
+  assert.ok(shortageText(app).includes('kept unchanged'))
   assertPlannerCacheMatches(app)
-  clickButton(app, 'View Recipes'); assert.equal(app.state.activeTab, 'recipes')
-  clickButton(app, '🍽 Plan'); clickButton(app, 'Review Preferences'); assert.equal(app.state.activeTab, 'preferences')
+  clickButton(app,'View Recipes');assert.equal(app.state.activeTab,'recipes')
+  clickButton(app,'🍽 Plan');clickButton(app,'Review Preferences');assert.equal(app.state.activeTab,'preferences')
 })
 
 test('zero eligible Generate reports no additional recipes and preserves locked meals without validating them', async () => {
@@ -1206,9 +1189,9 @@ test('zero eligible Generate reports no additional recipes and preserves locked 
     const app = await bestApp({ library: [incompatible], preferences: shortagePreferences,
       meals: [{ day: 'Monday', meal: incompatible }], locks })
     app.state.generateWeeklyMeals(); app.flush()
-    assert.equal(app.state.weeklyMeals.filter(item => item.meal).length, locks.length)
-    assert.ok(shortageText(app).includes(`${locks.length} of 7 days are currently filled.`))
-    assert.ok(shortageText(app).includes('No additional suitable recipes were available.'))
+    assert.equal(app.state.weeklyMeals.filter(item => item.meal).length, 1)
+    assert.ok(shortageText(app).includes('Could not fill all 7 dinners'))
+    assert.ok(shortageText(app).includes('kept unchanged'))
     if (locks.length) assert.equal(app.state.weeklyMeals[0].meal.id, 99)
     assert.deepEqual(app.state.lockedDays, locks)
     assertPlannerCacheMatches(app)
@@ -1230,7 +1213,7 @@ test('empty unavailable recipe library gives neutral feedback and preserves cach
   assert.ok(shortageText(app).includes('Dinnerlyst does not currently have recipes available to build the plan.'))
   assert.deepEqual({ meals: app.state.weeklyMeals, shopping: app.state.shoppingList, locks: app.state.lockedDays }, before)
   app.state.regenerateMeal('Monday'); app.flush()
-  assert.ok(shortageText(app).includes('Monday is locked. Unlock it to choose another meal.'))
+  assert.ok(shortageText(app).includes('Dinner 1 is locked. Unlock it to choose another meal.'))
   assertPlannerCacheMatches(app)
 })
 
@@ -1240,10 +1223,10 @@ test('Regenerate no-alternative and locked messages preserve meals; a successful
     meals: [{ day: 'Monday', meal: a }, { day: 'Tuesday', meal: b }], locks: ['Monday'] })
   const before = structuredClone(app.state.weeklyMeals)
   app.state.regenerateMeal('Monday'); app.flush()
-  assert.ok(shortageText(app).includes('Monday is locked. Unlock it to choose another meal.'))
+  assert.ok(shortageText(app).includes('Dinner 1 is locked. Unlock it to choose another meal.'))
   assert.deepEqual(app.state.weeklyMeals, before)
   app.state.regenerateMeal('Tuesday'); app.flush()
-  assert.ok(shortageText(app).includes('No alternative recipe is available for Tuesday that matches your preferences and restrictions without repeating another planned meal. Your current meal was kept.'))
+  assert.ok(shortageText(app).includes('No alternative recipe is available for Dinner 2 that matches your preferences and restrictions without repeating another planned meal. Your current meal was kept.'))
   assert.deepEqual(app.state.weeklyMeals, before)
   assertPlannerCacheMatches(app)
   const loading = app.state.getRecipes(); await app.pump()
@@ -1260,7 +1243,7 @@ test('Regenerate no-alternative and locked messages preserve meals; a successful
 test('generator feedback is cleared on account transitions and is not persisted in planner cache', async () => {
   const app = await bestApp({ library: [eligibleMeal(1)] })
   app.state.generateWeeklyMeals(); app.flush()
-  assert.ok(shortageText(app).includes('1 of 7 days'))
+  assert.ok(shortageText(app).includes('Could not fill all 4 dinners'))
   assert.equal(Object.hasOwn(JSON.parse(app.storage.getItem(account.plannerCacheKey('A'))), 'planFeedback'), false)
   await app.ready('B')
   assert.equal(shortageText(app), '')
@@ -1273,33 +1256,21 @@ test('a locked empty day is preserved and explained rather than claiming new mea
     preferences: shortagePreferences, meals: [{ day: 'Monday', meal: null }], locks: ['Monday'] })
   app.state.generateWeeklyMeals(); app.flush()
   assert.equal(app.state.weeklyMeals[0].meal, null)
-  assert.equal(app.state.weeklyMeals.filter(item => item.meal).length, 6)
-  assert.ok(shortageText(app).includes('6 of 7 days are currently filled. Some locked days have no meal.'))
+  assert.equal(app.state.weeklyMeals.length, 1)
+  assert.ok(shortageText(app).includes('unlock an empty dinner'))
   assertPlannerCacheMatches(app)
 })
 
-test('successful Cook Tonight clears a partial Generate warning while preserving shopping and cache behavior', async () => {
-  const rice = eligibleMeal(1)
-  const eggs = bestRecipe(2, 'Egg supper', ['Eggs'], ['Vegan', 'Peanut-Free'])
-  const app = await bestApp({ library: [rice], pantryNames: ['Eggs'], preferences: shortagePreferences,
-    shoppingList: { Other: [{ key: 'paper towels', label: 'paper towels', extra: true }] } })
-  app.state.generateWeeklyMeals(); app.flush()
-  assert.equal(app.state.weeklyMeals.filter(item => item.meal).length, 1)
-  assert.ok(shortageText(app).includes('1 of 7 days are currently filled.'))
-  const reload = app.state.getRecipes(); await app.pump()
-  app.requests.filter(req => req.table === 'recipes' && req.method === 'select').at(-1).resolve({ data: [rice, eggs], error: null })
-  await reload; await app.pump()
-  const otherDays = structuredClone(app.state.weeklyMeals.filter(item => item.day !== 'Thursday'))
-  bestButton(app, 'Cook Tonight').props.onClick(); app.flush()
-  assert.equal(app.state.weeklyMeals.find(item => item.day === 'Thursday').meal.id, 2)
-  assert.equal(app.state.weeklyMeals.filter(item => item.meal).length, 2)
-  assert.deepEqual(app.state.weeklyMeals.filter(item => item.day !== 'Thursday'), otherDays)
-  assert.equal(shortageText(app), '')
-  const visible = Object.values(app.state.shoppingList).flat().filter(item => !item.pantryHidden).map(item => item.label)
-  assert.ok(visible.includes('paper towels'))
-  assert.ok(visible.some(label => label.toLowerCase().includes('ingredient 1')))
-  assert.equal(visible.some(label => label.toLowerCase().includes('eggs')), false)
-  assert.deepEqual(app.state.lockedDays, [])
+test('adding a recommendation clears shortage feedback and preserves extras and pantry exclusions', async () => {
+  const rice=eligibleMeal(1),eggs=bestRecipe(2,'Egg supper',['Eggs'],['Vegan','Peanut-Free'])
+  const app=await bestApp({library:[rice,eggs],pantryNames:['Eggs'],preferences:shortagePreferences,shoppingList:{Other:[{key:'paper towels',label:'paper towels',extra:true}]}})
+  app.state.generateWeeklyMeals();app.flush();assert.ok(shortageText(app))
+  assert.equal(app.state.weeklyMeals.length,0)
+  bestButton(app,'Add as Dinner').props.onClick();app.flush()
+  assert.equal(app.state.weeklyMeals.length,1);assert.equal(app.state.weeklyMeals[0].meal.id,eggs.id)
+  assert.equal(shortageText(app),'')
+  const visible=Object.values(app.state.shoppingList).flat().filter(shopping.isShoppingItemVisible)
+  assert.deepEqual(visible.map(item=>item.label),['paper towels'])
   assertPlannerCacheMatches(app)
 })
 
@@ -1313,11 +1284,11 @@ test('every refused Cook Tonight guard preserves the plan, shopping, locks, cach
       meals, locks: ['Sunday', ...(reason === 'locked' ? ['Thursday'] : [])] })
     app.state.regenerateMeal('Sunday'); app.flush()
     const feedback = shortageText(app)
-    assert.ok(feedback.includes('Sunday is locked.'))
+    assert.ok(feedback.includes('Dinner is locked.'))
     const before = structuredClone({ meals: app.state.weeklyMeals, shopping: app.state.shoppingList, locks: app.state.lockedDays })
     const requested = reason === 'already tonight' ? todayMeal : reason === 'incompatible' ? incompatible
       : reason === 'unavailable recipe' ? { ...candidate, id: 999 } : reason === 'no recipe' ? null : candidate
-    app.state.cookTonight(requested); app.flush()
+    app.state.cookTonight(requested, 'Thursday'); app.flush()
     assert.deepEqual({ meals: app.state.weeklyMeals, shopping: app.state.shoppingList, locks: app.state.lockedDays }, before, reason)
     assert.equal(shortageText(app), feedback, reason)
     if (reason !== 'no recipe') assert.ok(app.alerts.length > 0, reason)
@@ -1356,12 +1327,12 @@ test('successful deletion cleans one/multiple assignments and locks, recalculate
     const preserved = structuredClone(app.state.weeklyMeals.find(item => item.day === 'Thursday'))
     clickButton(app, '🍽 Plan')
     app.state.regenerateMeal('Monday'); app.flush()
-    assert.ok(shortageText(app).includes('Monday is locked.'))
+    assert.ok(shortageText(app).includes('Dinner 1 is locked.'))
     clickButton(app, '📖 Recipes')
     const card = app.nodes().find(node => node.props?.className === 'recipe-card' && nodeText(node).includes(removed.name))
     app.nodes(card).find(node => node.type === 'button' && nodeText(node) === 'View Recipe').props.onClick(); app.flush()
     const deleting = app.state.deleteRecipe(101); await app.pump()
-    assert.ok(app.confirmations.at(-1).includes(`your plan for ${days.join(', ')}`))
+    assert.ok(app.confirmations.at(-1).includes(`your plan for ${days.map(day => `Dinner ${app.state.weeklyMeals.findIndex(item => item.day === day) + 1}`).join(', ')}`))
     clickButton(app, '🍽 Plan'); clickButton(app, removed.name)
     assert.equal(app.state.viewingRecipe.id, 101)
     await resolveDeletion(app, deleting, 101)
@@ -1373,7 +1344,7 @@ test('successful deletion cleans one/multiple assignments and locks, recalculate
     assert.equal(app.state.expandedRecipeId, null)
     assert.equal(detailModals(app).length, 0)
     assert.ok(shortageText(app).includes('was removed from'))
-    assert.equal(shortageText(app).includes('Monday is locked.'), false)
+    assert.equal(shortageText(app).includes('Dinner 1 is locked.'), false)
     const visible = Object.values(app.state.shoppingList).flat().filter(item => !item.pantryHidden)
     assert.deepEqual(visible.map(item => item.label).sort(), ['2 cup rice', '1 tbsp oil', 'paper towels'].sort())
     assert.deepEqual(app.state.checkedShoppingItems, checks)
@@ -1412,10 +1383,10 @@ test('delayed deletion success cleans current assignments only, preserving newer
   const app = await bestApp({ library: [removed, remaining, replacement, closeMatch], pantryNames: ['Eggs'],
     meals: [{ day: 'Monday', meal: removed }, { day: 'Tuesday', meal: remaining }, { day: 'Thursday', meal: removed }], locks: ['Monday', 'Tuesday'] })
   const deleting = app.state.deleteRecipe(101); await app.pump()
-  assert.ok(app.confirmations.at(-1).includes('Monday, Thursday'))
-  bestButton(app, 'Cook Tonight').props.onClick(); app.flush()
+  assert.ok(app.confirmations.at(-1).includes('Dinner 1, Dinner 3'))
+  app.state.cookTonight(replacement, 'Thursday'); app.flush()
   assert.equal(app.state.weeklyMeals.find(item => item.day === 'Thursday').meal.id, 103)
-  const thursdayCard = app.nodes().find(node => node.props?.className?.startsWith('meal-card') && nodeText(node).includes('Thursday'))
+  const thursdayCard = app.nodes().find(node => node.props?.className?.startsWith('meal-card') && nodeText(node).includes('Dinner 3'))
   app.nodes(thursdayCard).find(node => node.type === 'button' && nodeText(node) === 'Lock').props.onClick(); app.flush()
   clickButton(app, '🥫 Pantry')
   const card = app.nodes().find(node => node.props?.className === 'pantry-match-card' && nodeText(node).includes('Egg bread'))
@@ -1462,8 +1433,8 @@ async function assertEligibilityAcrossPlanningPaths(candidate, preferences, elig
   const old = bestRecipe(800, 'Existing meal', ['Rice'])
   const app = await bestApp({ library: [old, candidate], preferences,
     meals: [{ day: 'Thursday', meal: old }], pantryNames: ['Eggs'] })
-  assert.equal(Boolean(bestButton(app, 'Cook Tonight')), eligible, 'Best Match eligibility')
-  app.state.cookTonight(candidate); app.flush()
+  assert.equal(Boolean(bestButton(app, 'Add as Dinner')), eligible, 'Best Match eligibility')
+  app.state.cookTonight(candidate, 'Thursday'); app.flush()
   assert.equal(app.state.weeklyMeals[0].meal.id, eligible ? candidate.id : old.id, 'Cook Tonight guard')
   const cached = account.loadPlannerCache(app.storage, 'A')
   assert.deepEqual(cached.weeklyMeals, app.state.weeklyMeals)
@@ -1473,11 +1444,13 @@ async function assertEligibilityAcrossPlanningPaths(candidate, preferences, elig
     meals: [{ day: 'Thursday', meal: old }], pantryNames: ['Eggs'] })
   swap.state.regenerateMeal('Thursday'); swap.flush()
   assert.equal(swap.state.weeklyMeals[0].meal.id, eligible ? candidate.id : old.id, 'Regenerate eligibility')
-  swap.state.generateWeeklyMeals(); swap.flush()
-  assert.equal(swap.state.weeklyMeals.some(item => item.meal?.id === candidate.id), eligible, 'Generate eligibility')
-  const generatedCache = account.loadPlannerCache(swap.storage, 'A')
-  assert.deepEqual(generatedCache.weeklyMeals, swap.state.weeklyMeals)
-  assert.deepEqual(generatedCache.shoppingList, swap.state.shoppingList)
+  const generation = await bestApp({ library: [candidate], preferences, pantryNames: ['Eggs'] })
+  generation.state.changeDinnerCount(1); generation.flush()
+  generation.state.generateWeeklyMeals(); generation.flush()
+  assert.equal(generation.state.weeklyMeals.some(item => item.meal?.id === candidate.id), eligible, 'Generate eligibility')
+  const generatedCache = account.loadPlannerCache(generation.storage, 'A')
+  assert.deepEqual(generatedCache.weeklyMeals, generation.state.weeklyMeals)
+  assert.deepEqual(generatedCache.shoppingList, generation.state.shoppingList)
 }
 
 test('owned recipes may omit each soft lifestyle tag across all four planning paths', async () => {
@@ -1861,7 +1834,7 @@ test('an unsuccessful callback with no session cannot force a later ordinary log
   assert.equal(passwordHeading(app), false)
 })
 
-const resultsScrolls = app => app.scrollRequests.filter(request => nodeText(request.target).includes('This Week'))
+const resultsScrolls = app => app.scrollRequests.filter(request => nodeText(request.target).includes('Your Dinner Plan'))
 const scrollTestDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
 test('changed full Generate scrolls the This Week target once, only after the results render', async () => {
@@ -1873,9 +1846,9 @@ test('changed full Generate scrolls the This Week target once, only after the re
   assert.equal(resultsScrolls(app).length, 1)
   const request = resultsScrolls(app)[0]
   assert.equal(request.target.props.className, 'section-header')
-  assert.equal(app.nodes(request.target).find(node => node.type === 'h2').props.children[0], 'This Week’s Menu')
+  assert.equal(app.nodes(request.target).find(node => node.type === 'h2').props.children[0], 'Your Dinner Plan')
   assert.deepEqual(request.options, { behavior: 'smooth', block: 'start' })
-  assert.equal(request.renderedMeals.filter(item => item.meal).length, 7)
+  assert.equal(request.renderedMeals.filter(item => item.meal).length, 4)
   assert.deepEqual(request.renderedMeals, app.state.weeklyMeals)
   assertPlannerCacheMatches(app)
   clickButton(app, '⚙️ Settings / Preferences'); clickButton(app, '🍽 Plan')
@@ -1886,11 +1859,12 @@ test('changed partial Generate scrolls and reduced-motion Generate requests non-
   for (const reducedMotion of [false, true]) {
     const app = appHarness(memoryStorage(), null, null, reducedMotion)
     await app.ready('A', [recipe(701)])
+    app.state.changeDinnerCount(1); app.flush()
     app.state.generateWeeklyMeals(); app.flush()
     assert.equal(resultsScrolls(app).length, 1)
     assert.deepEqual(resultsScrolls(app)[0].options, { behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' })
     assert.equal(app.state.weeklyMeals.filter(item => item.meal).length, 1)
-    assert.ok(shortageText(app).includes('1 of 7'))
+    assert.equal(shortageText(app), '')
     assertPlannerCacheMatches(app)
   }
 })
@@ -1907,7 +1881,7 @@ test('Generate never scrolls on an empty library, zero assignments, unchanged as
     app.state.generateWeeklyMeals(); app.flush()
     assert.equal(resultsScrolls(app).length, 0, scenario)
     if (scenario === 'locked' || scenario === 'unchanged') assert.deepEqual(app.state.weeklyMeals.map(item => item.meal?.id ?? null), meals.map(item => item.meal?.id ?? null))
-    if (scenario === 'zero eligible') assert.equal(app.state.weeklyMeals.some(item => item.meal), false, 'even a failure that clears assignments must not scroll')
+    if (scenario === 'zero eligible') assert.equal(app.state.weeklyMeals[0].meal.id, candidate.id, 'shortage preserves existing assignments')
     assertPlannerCacheMatches(app)
   }
 })
@@ -1919,7 +1893,7 @@ test('Regenerate, Cook Tonight, cache restoration, recipe refresh and lock updat
   app.state.regenerateMeal('Thursday'); app.flush()
   assert.equal(app.state.weeklyMeals[0].meal.id, other.id)
   assert.equal(resultsScrolls(app).length, 0, 'Regenerate')
-  app.state.cookTonight(old); app.flush()
+  app.state.cookTonight(old, 'Thursday'); app.flush()
   assert.equal(app.state.weeklyMeals[0].meal.id, old.id)
   assert.equal(resultsScrolls(app).length, 0, 'Cook Tonight')
   clickButton(app, 'Lock')
@@ -2104,6 +2078,7 @@ test('UI removals survive Regenerate/Generate quantity changes and full cache re
   app.state.regenerateMeal('Thursday'); app.flush()
   assert.equal(shoppingRows(app).some(row => nodeText(row).includes('garlic')), false)
   assert.ok(Object.values(app.state.shoppingList).flat().some(item => item.label === 'garlic — 7 cloves' && item.userRemoved))
+  app.state.changeDinnerCount(2); app.flush()
   app.state.generateWeeklyMeals(); app.flush()
   assert.ok(Object.values(app.state.shoppingList).flat().some(item => item.label === 'garlic — 10 cloves' && item.userRemoved))
   assertPlannerCacheMatches(app)
@@ -2226,12 +2201,12 @@ test('Shop labels contain checkbox and complete ingredient text, while Remove re
 
 test('Shop distinguishes no plan, partial plan and no visible grocery requirements without false completion', async () => {
   const empty = appHarness(); await empty.ready('A', []); clickButton(empty, '🛒 Shop')
-  assert.ok(nodeText(empty.nodes()).includes('No weekly plan yet'))
+  assert.ok(nodeText(empty.nodes()).includes('No dinner plan yet'))
   assert.equal(empty.nodes().some(n => n.props?.role === 'progressbar'), false)
   assert.equal(nodeText(empty.nodes()).includes('All set —'), false)
   clickButton(empty, 'Go to Plan'); assert.equal(empty.state.activeTab, 'planner')
   const app = await removalApp(); clickButton(app, '🛒 Shop')
-  assert.equal(app.nodes().find(n => n.type === 'p' && n.props?.children?.[0] === 'Your plan has ').props.children[1], 1)
+  assert.equal(app.nodes().some(n => n.type === 'p' && n.props?.children?.[0] === 'Your plan has '), false, 'one filled slot is a complete one-dinner plan')
   for (const row of [...shoppingRows(app)]) trashShoppingRow(app, nodeText(app.nodes(row).find(n => n.props?.className === 'shopping-item-label')))
   assert.ok(nodeText(app.nodes()).includes('No visible grocery requirements'))
   assert.ok(nodeText(app.nodes()).includes('Restore removed items'))
@@ -2379,4 +2354,191 @@ test('Pantry recipe load failure has its own retry instead of a false no-match s
   assert.ok(nodeText(app.nodes()).includes('Finding meals from your pantry'))
   latestRequest(app,'recipes').resolve({data:[],error:null});await app.pump()
   assert.equal(nodeText(app.nodes()).includes('Meal suggestions are unavailable'),false)
+})
+
+const dinnerSlots = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+const dinnerLibrary = () => Array.from({length:9}, (_, i) => eligibleMeal(3000+i))
+
+test('fresh accounts default to four and generate exactly every selected count from one through seven', async () => {
+  for (let count=1;count<=7;count++) {
+    const app=appHarness();await app.ready('A',dinnerLibrary(),shortagePreferences)
+    assert.equal(app.state.preferredDinnerCount,4)
+    const picker=app.nodes().find(node=>node.props?.id==='dinner-count')
+    assert.ok(picker);picker.props.onChange({target:{value:String(count)}});app.flush()
+    clickButton(app,'Generate My Meal Plan')
+    assert.equal(app.state.weeklyMeals.length,count)
+    assert.equal(new Set(app.state.weeklyMeals.map(item=>item.meal.id)).size,count)
+    assert.ok(app.state.weeklyMeals.every(item=>item.meal.diet_tags.includes('Vegan')&&item.meal.diet_tags.includes('Peanut-Free')))
+    const cards=app.nodes().filter(node=>node.props?.className?.startsWith('meal-card'))
+    assert.deepEqual(cards.map(card=>card.props.key),app.state.weeklyMeals.map(item=>item.day))
+    assert.deepEqual(cards.map(card=>nodeText(app.nodes(card).find(node=>node.props?.className==='meal-day'))),Array.from({length:count},(_,i)=>`Dinner ${i+1}`))
+    assert.equal(JSON.parse(app.storage.getItem(account.plannerCacheKey('A'))).preferredDinnerCount,count)
+  }
+})
+
+test('count edits never truncate existing plans or locks; refresh preserves the separate count and assignments', async () => {
+  const library=dinnerLibrary(),meals=dinnerSlots.map((day,i)=>({day,meal:library[i]}))
+  const app=await bestApp({library,meals,locks:['Monday','Sunday']})
+  assert.equal(app.state.preferredDinnerCount,7)
+  const before=structuredClone(app.state.weeklyMeals)
+  app.state.changeDinnerCount(2);app.flush()
+  assert.deepEqual(app.state.weeklyMeals,before)
+  app.state.generateWeeklyMeals();app.flush()
+  assert.deepEqual(app.state.weeklyMeals,before)
+  assert.deepEqual(app.state.lockedDays,['Monday','Sunday'])
+  assert.ok(shortageText(app).includes('Remove specific dinners'))
+  const reload=appHarness(app.storage);await reload.ready('A',library)
+  assert.equal(reload.state.preferredDinnerCount,2)
+  assert.deepEqual(reload.state.weeklyMeals,before)
+  assert.deepEqual(reload.state.lockedDays,['Monday','Sunday'])
+})
+
+test('specific middle removal preserves stable identities, ordering, other locks and checks; locked removal needs confirmation', async () => {
+  const library=dinnerLibrary(),app=await bestApp({library,meals:dinnerSlots.slice(0,4).map((day,i)=>({day,meal:library[i]})),locks:['Monday','Wednesday']})
+  const others=structuredClone(app.state.weeklyMeals.filter(item=>item.day!=='Tuesday'))
+  app.nodes().find(node=>node.props?.['aria-label']==='Remove Dinner 2').props.onClick();app.flush()
+  assert.deepEqual(app.state.weeklyMeals,others)
+  assert.deepEqual(app.state.lockedDays,['Monday','Wednesday'])
+  assert.equal(app.state.preferredDinnerCount,7)
+  assert.ok(nodeText(app.nodes()).includes('Dinner 3'))
+  assert.equal(nodeText(app.nodes()).includes('Monday'),false)
+  app.state.removeDinner('Wednesday');app.flush()
+  assert.ok(app.confirmations.at(-1).includes('locked Dinner 2'))
+  assert.deepEqual(app.state.lockedDays,['Monday'])
+  assert.deepEqual(app.state.weeklyMeals.map(item=>item.day),['Monday','Thursday'])
+  const storage=memoryStorage(),owner={userId:'A',generation:1}
+  account.persistPlannerCache(storage,owner,owner,{weeklyMeals:[{day:'Sunday',meal:library[0]}],shoppingList:{},lockedDays:['Sunday'],preferredDinnerCount:4})
+  const cancelled=appHarness(storage,'Thursday');await cancelled.ready('A',library);cancelled.setConfirm(false)
+  const before=structuredClone(cancelled.state.weeklyMeals)
+  cancelled.state.removeDinner('Sunday');cancelled.flush()
+  assert.deepEqual(cancelled.state.weeklyMeals,before);assert.deepEqual(cancelled.state.lockedDays,['Sunday'])
+})
+
+test('Add Dinner respects seven-slot limit, exclusions and duplicate prevention without changing existing assignments', async () => {
+  const library=dinnerLibrary(),app=await bestApp({library,meals:[{day:'Sunday',meal:library[0]}],locks:['Sunday'],preferences:shortagePreferences})
+  const first=structuredClone(app.state.weeklyMeals[0])
+  for(let i=0;i<6;i++){clickButton(app,'+ Add Dinner');assert.deepEqual(app.state.weeklyMeals[0],first)}
+  assert.equal(app.state.weeklyMeals.length,7)
+  assert.equal(new Set(app.state.weeklyMeals.map(item=>item.meal.id)).size,7)
+  assert.equal(buttonNamed(app,'+ Add Dinner').props.disabled,true)
+  app.state.addDinner();app.flush();assert.equal(app.state.weeklyMeals.length,7)
+  assert.deepEqual(app.state.lockedDays,['Sunday'])
+  const scarce=await bestApp({library:[library[0]],meals:[{day:'Sunday',meal:library[0]}]})
+  scarce.state.addDinner();scarce.flush();assert.equal(scarce.state.weeklyMeals.length,1)
+  assert.ok(shortageText(scarce).includes('No additional suitable recipe'))
+})
+
+test('adding and removing dinners rebuilds quantities while preserving extras, checked identities, removals and Pantry exclusions', async () => {
+  const row=(id,amount)=>({...bestRecipe(id,`Rice dinner ${id}`,['Salt']),structured_ingredients:[{amount,unit:'cup',ingredient:'Rice'},{amount:'1',unit:'tsp',ingredient:'Salt'}]})
+  const a=row(4001,'1'),b=row(4002,'2')
+  const app=await bestApp({library:[a,b],meals:[{day:'Friday',meal:a}],pantryNames:['Salt'],shoppingList:{Other:[{key:'paper towels',label:'paper towels',extra:true}]}})
+  clickButton(app,'🛒 Shop');await checkShoppingLabel(app,'paper towels');await checkShoppingLabel(app,'1 cup rice')
+  const checked=[...app.state.checkedShoppingItems],writes=app.requests.length
+  clickButton(app,'🍽 Plan');app.state.addDinner();app.flush()
+  let visible=Object.values(app.state.shoppingList).flat().filter(shopping.isShoppingItemVisible)
+  assert.ok(visible.some(item=>item.label==='3 cup rice'))
+  assert.equal(visible.some(item=>/salt/i.test(item.label)),false)
+  assert.deepEqual(app.state.checkedShoppingItems,checked)
+  assert.ok(shopping.isShoppingItemChecked(visible.find(item=>item.label==='paper towels'),checked))
+  assert.equal(shopping.isShoppingItemChecked(visible.find(item=>item.label==='3 cup rice'),checked),false,'changed quantities are not silently marked checked')
+  clickButton(app,'🛒 Shop');trashShoppingRow(app,'3 cup rice');clickButton(app,'🍽 Plan')
+  const added=app.state.weeklyMeals[1].day
+  app.state.removeDinner(added);app.flush()
+  const marker=Object.values(app.state.shoppingList).flat().find(item=>item.label==='1 cup rice')
+  assert.ok(marker.userRemoved)
+  assert.deepEqual(app.state.checkedShoppingItems,checked)
+  assert.equal(app.requests.length,writes,'planner edits do not write shopping checks or other Supabase data')
+  clickButton(app,'🛒 Shop');clickButton(app,'Restore removed items')
+  visible=Object.values(app.state.shoppingList).flat().filter(shopping.isShoppingItemVisible)
+  assert.ok(visible.some(item=>item.label==='1 cup rice'))
+  assertPlannerCacheMatches(app)
+})
+
+test('recommendation controls add or replace explicitly, respect locks and never target the calendar weekday', async () => {
+  const a=eligibleMeal(5001),b=eligibleMeal(5002),candidate=bestRecipe(5003,'Recommended',['Eggs'],['Vegan','Peanut-Free'])
+  const app=await bestApp({library:[a,b,candidate],meals:[{day:'Sunday',meal:a},{day:'Monday',meal:b}],locks:['Sunday'],pantryNames:['Eggs'],preferences:shortagePreferences})
+  const before=structuredClone(app.state.weeklyMeals)
+  assert.equal(bestButton(app,'Replace Selected Dinner').props.disabled,true)
+  const select=app.nodes().find(node=>node.props?.id==='recommendation-dinner')
+  assert.ok(app.nodes(select).find(node=>node.type==='option'&&node.props.value==='Sunday').props.disabled)
+  app.state.cookTonight(candidate,'Sunday');app.flush();assert.deepEqual(app.state.weeklyMeals,before)
+  select.props.onChange({target:{value:'Monday'}});app.flush()
+  bestButton(app,'Replace Selected Dinner').props.onClick();app.flush()
+  assert.deepEqual(app.state.weeklyMeals[0],before[0]);assert.equal(app.state.weeklyMeals[1].meal.id,candidate.id)
+  assert.deepEqual(app.state.lockedDays,['Sunday'])
+  assertPlannerCacheMatches(app)
+  const full=await bestApp({library:dinnerLibrary().concat(candidate),meals:dinnerSlots.map((day,i)=>({day,meal:dinnerLibrary()[i]})),pantryNames:['Eggs']})
+  assert.equal(bestButton(full,'Add as Dinner').props.disabled,true)
+  const fullBefore=structuredClone(full.state.weeklyMeals)
+  full.state.cookTonight(candidate,'add');full.flush();assert.deepEqual(full.state.weeklyMeals,fullBefore)
+})
+
+test('count preference is isolated on account switching and stale callbacks cannot change another account', async () => {
+  const library=dinnerLibrary(),app=appHarness();await app.ready('A',library)
+  app.state.changeDinnerCount(2);app.flush();app.state.generateWeeklyMeals();app.flush()
+  const a=structuredClone(app.state.weeklyMeals),stale={add:app.state.addDinner,remove:app.state.removeDinner,count:app.state.changeDinnerCount,recommend:app.state.cookTonight,generate:app.state.generateWeeklyMeals}
+  await app.ready('B',library);assert.equal(app.state.preferredDinnerCount,4);assert.equal(app.state.weeklyMeals.length,0)
+  stale.count(7);stale.add();stale.remove('Monday');stale.recommend(library[3],'add');stale.generate();app.flush()
+  assert.equal(app.state.preferredDinnerCount,4);assert.equal(app.state.weeklyMeals.length,0)
+  app.state.changeDinnerCount(6);app.flush()
+  await app.ready('A',library);assert.equal(app.state.preferredDinnerCount,2);assert.deepEqual(app.state.weeklyMeals,a)
+  await app.ready('B',library);assert.equal(app.state.preferredDinnerCount,6)
+})
+
+test('invalid count metadata does not discard a valid legacy plan; invalid picker values are ignored', async () => {
+  for(const preferredDinnerCount of [0,8,'4',null,1.5]){
+    const storage=memoryStorage(),value={version:1,userId:'A',...plan(87),preferredDinnerCount}
+    storage.setItem(account.plannerCacheKey('A'),JSON.stringify(value))
+    const loaded=account.loadPlannerCache(storage,'A')
+    assert.deepEqual(loaded.weeklyMeals,plan(87).weeklyMeals)
+    assert.ok(storage.getItem(account.plannerCacheKey('A')))
+    const app=appHarness(storage);await app.ready('A',[recipe(87)])
+    assert.equal(app.state.preferredDinnerCount,7)
+    for(const value of [0,8,'bad',1.5]){app.state.changeDinnerCount(value);app.flush();assert.equal(app.state.preferredDinnerCount,7)}
+    assert.equal(app.state.weeklyMeals[0].meal.id,87);assert.deepEqual(app.state.lockedDays,['Monday'])
+  }
+})
+
+test('locks, swipe regeneration and empty legacy slots survive dynamic dinner numbering', async () => {
+  const library=dinnerLibrary(),app=await bestApp({library,meals:[{day:'Sunday',meal:library[0]},{day:'Wednesday',meal:null}],locks:['Wednesday']})
+  const cards=()=>app.nodes().filter(node=>node.props?.className?.startsWith('meal-card'))
+  const first=cards()[0]
+  first.props.onTouchStart({targetTouches:[{clientX:220}]});app.flush()
+  cards()[0].props.onTouchEnd({changedTouches:[{clientX:20}]});app.flush()
+  assert.notEqual(app.state.weeklyMeals[0].meal.id,library[0].id)
+  assert.equal(app.state.weeklyMeals[1].meal,null);assert.deepEqual(app.state.lockedDays,['Wednesday'])
+  app.state.toggleDayLock('Wednesday');app.flush();app.state.regenerateMeal('Wednesday');app.flush()
+  assert.ok(app.state.weeklyMeals[1].meal)
+  app.state.toggleDayLock('Sunday');app.flush()
+  const before=structuredClone(app.state.weeklyMeals)
+  app.state.regenerateMeal('Sunday');app.flush();assert.deepEqual(app.state.weeklyMeals,before)
+  clickButton(app,app.state.weeklyMeals[0].meal.name);assert.equal(app.state.viewingRecipe.id,app.state.weeklyMeals[0].meal.id)
+})
+
+
+test('selecting a smaller count immediately explains specific removal without changing plan, locks or shopping', async () => {
+  const library=dinnerLibrary(),app=await bestApp({library,meals:dinnerSlots.slice(0,4).map((day,i)=>({day,meal:library[i]})),locks:['Monday']})
+  const before=structuredClone({meals:app.state.weeklyMeals,locks:app.state.lockedDays,shopping:app.state.shoppingList})
+  const help=()=>app.nodes().find(node=>node.props?.id==='dinner-count-help')
+  app.nodes().find(node=>node.props?.id==='dinner-count').props.onChange({target:{value:'2'}});app.flush()
+  assert.equal(app.state.preferredDinnerCount,2)
+  assert.ok(nodeText(help()).includes('Your plan still contains 4 dinners. Remove specific dinner cards to reach 2.'))
+  assert.equal(help().props.role,'status')
+  assert.equal(app.nodes().find(node=>node.props?.id==='dinner-count').props['aria-describedby'],'dinner-count-help')
+  assert.deepEqual({meals:app.state.weeklyMeals,locks:app.state.lockedDays,shopping:app.state.shoppingList},before)
+  app.state.changeDinnerCount(4);app.flush();assert.equal(help(),undefined)
+  app.state.changeDinnerCount(2);app.flush()
+  app.state.removeDinner('Tuesday');app.flush();assert.ok(help())
+  app.state.removeDinner('Wednesday');app.flush();assert.equal(help(),undefined)
+  assert.deepEqual(app.state.lockedDays,['Monday'])
+})
+
+test('plan count reads zero, one or multiple dinners planned with correct singular', async () => {
+  const library=dinnerLibrary()
+  for(const count of [0,1,2,7]){
+    const app=await bestApp({library,meals:dinnerSlots.slice(0,count).map((day,i)=>({day,meal:library[i]}))})
+    const header=app.nodes().find(node=>node.props?.className==='section-header')
+    assert.equal(nodeText(app.nodes(header).find(node=>node.type==='p'&&nodeText(node).includes('planned'))),`${count} ${count===1?'dinner':'dinners'} planned`)
+    assert.equal(nodeText(header).includes('dinner slots'),false)
+  }
 })
