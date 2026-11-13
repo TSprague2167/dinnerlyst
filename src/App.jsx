@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { supabase, initialAuthCallbackType } from './supabase'
 import './App.css'
+import { loadFavorites, saveFavorites, shuffledRecipeIds, swipeAction } from './discovery'
 import { discardLegacyCaches, loadPlannerCache, persistPlannerCache, nextAccountOwner, isCurrentAccount } from './accountState'
 import { getPantryRecipeMatch } from './pantry'
 import { refreshWeeklyMeals, rebuildShoppingList, asShoppingItem, isShoppingItemChecked, shoppingCheckIdentities, shoppingRemovalKey, isShoppingItemVisible, removeShoppingItem, restoreRemovedShoppingItems, addMissingShoppingItems, shoppingContainsIngredient } from './shoppingList'
@@ -111,6 +112,13 @@ function App() {
   const [recipeUrl, setRecipeUrl] = useState("");
   const [searchTerm, setSearchTerm] = useState("")
   const [pantrySearch, setPantrySearch] = useState("")
+  const [favoriteIds, setFavoriteIds] = useState([])
+  const [favoritesError, setFavoritesError] = useState(false)
+  const [libraryCollection, setLibraryCollection] = useState("all")
+  const [discoveryQueue, setDiscoveryQueue] = useState(null)
+  const [discoveryFeedback, setDiscoveryFeedback] = useState("")
+  const discoveryGesture = useRef(null)
+  const discoveryAction = useRef(null)
   const [activeTab, setActiveTab] = useState("planner")
   const [category, setCategory] = useState("Dinner")
   const [shoppingList, setShoppingList] = useState({})
@@ -200,6 +208,14 @@ const [editingRecipeId, setEditingRecipeId] = useState(null)
         setPantrySearch("")
         setSelectedCategory("All")
         setCategory("Dinner")
+        const favorites = loadFavorites(plannerStorage(), nextId)
+        setFavoriteIds(favorites.ids)
+        setFavoritesError(favorites.error)
+        setLibraryCollection("all")
+        setDiscoveryQueue(null)
+        setDiscoveryFeedback("")
+        discoveryGesture.current = null
+        discoveryAction.current = null
         setActiveTab("planner")
         setTouchStartX(null)
         setTouchEndX(null)
@@ -853,6 +869,73 @@ function cookTonight(recipe, destination) {
   commitDinnerPlan(destination === "add" ? [...meals, { day: slot, meal: currentRecipe }] :
     meals.map(item => item.day === slot ? { ...item, meal: currentRecipe } : item))
   setRecommendationTarget("")
+  return true
+}
+const eligibleDiscoveryRecipes = recipes.filter(meetsPlanningPreferences)
+const discoveryRecipe = recipeLoad === "ready" && discoveryQueue
+  ? discoveryQueue.map(id => eligibleDiscoveryRecipes.find(recipe => recipe.id === id)).find(Boolean) : null
+const libraryRecipes = recipes.filter(recipe =>
+  (libraryCollection !== "favorites" || favoriteIds.includes(recipe.id)) &&
+  recipe.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
+  (selectedCategory === "All" || (recipe.categories || []).includes(selectedCategory)))
+useEffect(() => {
+  if (activeTab !== "mix-it-up" || recipeLoad !== "ready") return
+  if (discoveryQueue === null) setDiscoveryQueue(shuffledRecipeIds(eligibleDiscoveryRecipes))
+  else {
+    const valid = new Set(eligibleDiscoveryRecipes.map(recipe => recipe.id))
+    if (discoveryQueue.some(id => !valid.has(id))) setDiscoveryQueue(discoveryQueue.filter(id => valid.has(id)))
+  }
+}, [activeTab, recipeLoad, recipes, onboardingAnswers, discoveryQueue])
+useEffect(() => {
+  discoveryGesture.current = null
+  discoveryAction.current = null
+}, [discoveryRecipe?.id, activeTab])
+function retryFavorites() {
+  if (!plannerOwner || !ownsAccount(plannerOwner)) return
+  const loaded = loadFavorites(plannerStorage(), userId)
+  setFavoriteIds(loaded.ids)
+  setFavoritesError(loaded.error)
+}
+function discover(action, recipe = discoveryRecipe) {
+  if (!plannerOwner || !ownsAccount(plannerOwner) || !recipe || recipe.id !== discoveryRecipe?.id ||
+      recipeLoad !== "ready" || discoveryAction.current === recipe.id) return
+  discoveryAction.current = recipe.id
+  if (action === "love") {
+    if (favoritesError) { discoveryAction.current = null; return }
+    const saved = loadFavorites(plannerStorage(), userId)
+    if (saved.error) {
+      setFavoritesError(true)
+      discoveryAction.current = null
+      return
+    }
+    const ids = [...new Set([...saved.ids, recipe.id])]
+    if (!saveFavorites(plannerStorage(), plannerOwner, accountRef.current, ids)) {
+      setFavoritesError(true)
+      setDiscoveryFeedback("Could not save your favorite on this browser. Your plan has not changed.")
+      discoveryAction.current = null
+      return
+    }
+    setFavoriteIds(ids)
+    setDiscoveryFeedback(`Loved ${recipe.name}. Saved to Favorites on this browser.`)
+  } else if (action === "add") {
+    if (!cookTonight(recipe, "add")) { discoveryAction.current = null; return }
+    setDiscoveryFeedback(`Added ${recipe.name} to your dinner plan.`)
+  } else if (action === "pass") setDiscoveryFeedback("Passed. You can discover this recipe again in a new browsing session.")
+  else { discoveryAction.current = null; return }
+  setDiscoveryQueue(queue => queue.filter(id => id !== recipe.id))
+}
+function startDiscoverySwipe(event) {
+  discoveryGesture.current = null
+  if (event.target.closest?.('button, a, input, select') || event.touches.length !== 1) return
+  const touch = event.touches[0]
+  discoveryGesture.current = { x: touch.clientX, y: touch.clientY, id: discoveryRecipe?.id, owner: plannerOwner }
+}
+function finishDiscoverySwipe(event) {
+  const start = discoveryGesture.current
+  discoveryGesture.current = null
+  if (!start || !ownsAccount(start.owner) || start.id !== discoveryRecipe?.id) return
+  const action = swipeAction(start, event.changedTouches[0])
+  if (action) discover(action)
 }
 async function changePantryItem(item, remove = false, clearInput = false) {
   const owner = plannerOwner
@@ -1479,7 +1562,7 @@ if (!saved || !ownsAccount(owner)) return
   )
 }
   return (
-    <div className={`app signed-in-app ${activeTab === "planner" ? "plan-page" : activeTab === "recipes" ? "library-page" : activeTab === "shopping" ? "shopping-page" : activeTab === "pantry" ? "pantry-page" : ""}`}>
+    <div className={`app signed-in-app ${activeTab === "planner" ? "plan-page" : activeTab === "recipes" ? "library-page" : activeTab === "shopping" ? "shopping-page" : activeTab === "pantry" ? "pantry-page" : activeTab === "mix-it-up" ? "discovery-page" : ""}`}>
       <header className="hero app-header">
         <div className="app-brand">
           <h1>Dinnerlyst</h1>
@@ -1916,6 +1999,7 @@ if (!saved || !ownsAccount(owner)) return
         <button className="generate-button" onClick={generateWeeklyMeals}>
           Generate My Meal Plan
         </button>
+        <button className="mix-home-entry" type="button" onClick={() => setActiveTab("mix-it-up")}>Mix It Up — discover a dinner</button>
         <p className="plan-intro-note">Choose 1–7 dinners. No days to assign. Shopping list included.</p>
         </div>
         {Boolean(weeklyMeals.find(item => item.meal?.image_url)?.meal || recipes.find(recipe => recipe.image_url)) && (
@@ -1939,6 +2023,42 @@ if (!saved || !ownsAccount(owner)) return
      {recipeLoad === "loading" && <p role="status">Loading recipes…</p>}
      {recipeLoad === "error" && <div role="alert"><p>Could not load recipes. Your existing recipes have been kept.</p><button className="small-button" onClick={() => getRecipes()}>Retry loading recipes</button></div>}
      <main className={`grid recipes-grid ${activeTab === "planner" ? "plan-home" : ""}`}>
+      {activeTab === "mix-it-up" && (
+        <section className="discovery" aria-labelledby="discovery-title">
+          <button className="small-button" type="button" onClick={() => setActiveTab("planner")}>Back to Plan</button>
+          <p className="discovery-eyebrow">A little dinner inspiration</p>
+          <h2 id="discovery-title">Mix It Up</h2>
+          <p>One delicious idea at a time. Swipe left to pass, right to love — or use the buttons below.</p>
+          <p className="discovery-note">Favorites are saved on this browser only. Loving a recipe never changes your dinner plan.</p>
+          {favoritesError && <div role="alert"><p>Favorites could not be loaded or saved. Retry before loving recipes.</p><button type="button" onClick={retryFavorites}>Retry Favorites</button></div>}
+          <p className="discovery-feedback" role="status" aria-live="polite">{discoveryFeedback}</p>
+          {recipeLoad === "ready" && discoveryQueue !== null && (discoveryRecipe ? (
+            <article className="discovery-card" key={discoveryRecipe.id} aria-label={`Discover ${discoveryRecipe.name}`}
+              onTouchStart={startDiscoverySwipe} onTouchEnd={finishDiscoverySwipe}
+              onTouchMove={event => { if (event.touches.length !== 1) discoveryGesture.current = null }}
+              onTouchCancel={() => { discoveryGesture.current = null }}>
+              <div className="discovery-photo">
+                {discoveryRecipe.image_url ? <img src={discoveryRecipe.image_url} alt={discoveryRecipe.name} onError={event => { event.currentTarget.hidden = true }} /> : <span>Something delicious awaits</span>}
+              </div>
+              <div className="discovery-copy">
+                <h3>{discoveryRecipe.name}</h3>
+                <div className="discovery-actions">
+                  <button type="button" onClick={() => discover("pass")}>Pass</button>
+                  <button type="button" disabled={favoritesError} onClick={() => discover("love")}>{favoriteIds.includes(discoveryRecipe.id) ? "Love It — already saved" : "Love It"}</button>
+                  <button type="button" onClick={() => setViewingRecipe(discoveryRecipe)}>View Recipe</button>
+                  <button className="discovery-primary" type="button" disabled={weeklyMeals.length >= 7 || weeklyMeals.some(item => item.meal?.id === discoveryRecipe.id)} onClick={() => discover("add")}>Add to Plan</button>
+                </div>
+                {weeklyMeals.some(item => item.meal?.id === discoveryRecipe.id) ? <p>Already in your dinner plan.</p> : weeklyMeals.length >= 7 && <p>Your plan has seven dinners. Remove a dinner in Plan to make room.</p>}
+              </div>
+            </article>
+          ) : <div className="discovery-empty" role="status">
+            <h3>{eligibleDiscoveryRecipes.length ? "You’ve explored every dinner" : "No matching dinners right now"}</h3>
+            <p>{eligibleDiscoveryRecipes.length ? "Your passed recipes haven’t been excluded. Start a fresh browse whenever you like." : "Add recipes or review your dietary preferences and restrictions."}</p>
+            {eligibleDiscoveryRecipes.length > 0 && <button type="button" onClick={() => { setDiscoveryQueue(shuffledRecipeIds(eligibleDiscoveryRecipes)); setDiscoveryFeedback("") }}>Browse again</button>}
+            <button type="button" onClick={() => { setLibraryCollection("favorites"); setActiveTab("recipes") }}>View Favorites</button>
+          </div>)}
+        </section>
+      )}
       {activeTab === "recipes" && (
         <section className="card recipe-library" aria-labelledby="library-title">
           <header className="library-heading">
@@ -1976,33 +2096,23 @@ if (!saved || !ownsAccount(owner)) return
 <option value="Dessert">Dessert</option>
 </select>
 </label>
-<p className="library-count">{recipes.length} recipes in your collection</p>
+<label className="library-category">Collection
+<select aria-label="Recipe collection" value={libraryCollection} onChange={event => setLibraryCollection(event.target.value)}>
+<option value="all">All Recipes</option><option value="favorites">Favorites</option>
+</select></label>
+<p className="library-count">{libraryRecipes.length} {libraryRecipes.length === 1 ? "recipe" : "recipes"} shown</p>
+<p className="library-favorites-note">Favorites are saved on this browser only.</p>
+{favoritesError && <div role="alert">Favorites are unavailable. <button type="button" onClick={retryFavorites}>Retry Favorites</button></div>}
 </div>
           {recipeLoad === "ready" && recipes.length === 0 && <p className="empty">No recipes yet.</p>}
            
-         {recipes
-  .filter((recipe) =>
-    recipe.name.toLowerCase().includes(searchTerm.toLowerCase())
-  )
-  .filter((recipe) =>
-    selectedCategory === "All" ||
-    (recipe.categories || []).includes(selectedCategory)
-  )
-  .length === 0 ? (
+         {libraryRecipes.length === 0 ? (
     recipeLoad === "ready" && recipes.length > 0 && <p className="empty">
-      No recipes found. Try another search or category.
+      {libraryCollection === "favorites" ? "No favorites match. Love recipes in Mix It Up, or adjust your search and category." : "No recipes found. Try another search or category."}
     </p>
   ) : (
     <div className="recipe-gallery">
-  {recipes
-      .filter((recipe) =>
-        recipe.name.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-      .filter((recipe) =>
-        selectedCategory === "All" ||
-        (recipe.categories || []).includes(selectedCategory)
-      )
-      .map((recipe) => (
+  {libraryRecipes.map((recipe) => (
         <div className="recipe-card" key={recipe.id}>
          <div className="library-media">
          {recipe.image_url ? (

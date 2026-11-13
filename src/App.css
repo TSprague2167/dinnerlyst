@@ -1730,3 +1730,38 @@ select:focus {
 .plan-page .dinner-add-button { margin-top: 18px; min-height: 44px; }
 .plan-page .recommendation-dinner-actions { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; min-width: 0; }
 .plan-page .recommendation-dinner-actions button { min-height: 44px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+
+/* Mix It Up is isolated from the planner's existing swipe/card rules. */
+.plan-page .mix-home-entry { display: block; margin-top: 12px; min-height: 48px; border: 1px solid #294d3c; border-radius: 12px; background: #edf0e6; color: #294d3c; font-weight: 600; }
+#root:has(> .discovery-page) { width: 1320px; background: #faf7ef; }
+.app.discovery-page { width: 100%; padding: 28px 36px 48px; background: #faf7ef; color: #293a30; text-align: left; }
+.discovery-page .recipes-grid { display: block; }
+.discovery { max-width: 580px; min-width: 0; margin: 24px auto; }
+.discovery h2 { font: 400 clamp(32px, 5vw, 46px)/1.15 Georgia, serif; margin: 8px 0 12px; }
+.discovery p { line-height: 1.6; overflow-wrap: anywhere; }
+.discovery-eyebrow { color: #63735d; text-transform: uppercase; font-size: 12px; letter-spacing: .12em; margin-top: 24px; }
+.discovery .discovery-note, .recipe-library .library-favorites-note { font-size: 12px; color: #686c60; }
+.discovery-feedback { min-height: 1.6em; color: #294d3c; }
+.discovery-card { min-width: 0; overflow: hidden; border: 1px solid #e5dfd2; border-radius: 22px; background: #fffdf8; box-shadow: 0 6px 24px #343f3010; touch-action: pan-y; }
+.discovery-photo { aspect-ratio: 4 / 3; position: relative; display: grid; place-items: center; background: #e8e7db; color: #405448; }
+.discovery-photo img { display: block; position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.discovery-photo:has(img[hidden])::after { content: 'Something delicious awaits'; }
+.discovery-copy { padding: 20px; min-width: 0; }
+.discovery-copy h3 { font: 400 clamp(24px, 4vw, 32px)/1.2 Georgia, serif; overflow-wrap: anywhere; margin: 0 0 20px; }
+.discovery-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.discovery button { min-width: 0; min-height: 48px; padding: 10px 14px; border: 1px solid #c9d0bf; border-radius: 12px; background: #fffdf8; color: #294d3c; white-space: normal; overflow-wrap: anywhere; }
+.discovery .discovery-primary { background: #294d3c; color: #fffdf8; }
+.discovery button:disabled { opacity: .55; cursor: not-allowed; }
+.discovery button:focus-visible, .plan-page .mix-home-entry:focus-visible { outline: 3px solid #7c4a35; outline-offset: 3px; }
+.discovery-empty { border-radius: 20px; padding: 24px; background: #fffdf8; }
+.discovery-empty button { margin: 8px 8px 0 0; }
+@media (max-width: 700px) {
+  .app.discovery-page { padding: 16px 12px 32px; }
+  .discovery { margin-top: 16px; }
+  .discovery-copy { padding: 16px; }
+}
+
+.discovery-photo img[hidden] { display: none; }
+
+.discovery h2, .discovery h3 { color: #293a30; }
+.discovery-page .app-header { min-width: 0; }

@@ -7,6 +7,7 @@ import * as shopping from '../src/shoppingList.js'
 import * as ingredients from '../src/ingredients.js'
 import * as pantry from '../src/pantry.js'
 import * as shoppingDisplay from '../src/shoppingDisplay.js'
+import * as discovery from '../src/discovery.js'
 
 const recipe = (id, name = `Recipe ${id}`) => ({ id, name, ingredients: ['eggs'], instructions: '' })
 const plan = id => ({ weeklyMeals: [{ day: 'Monday', meal: recipe(id) }], shoppingList: { Other: ['paper towels'] }, lockedDays: ['Monday'] })
@@ -123,8 +124,8 @@ function appHarness(storage = memoryStorage(), weekday = null, callbackType = nu
     storage: { from: () => ({ upload: path => request({ table: 'images', method: 'upload', path }), getPublicUrl: path => ({ data: { publicUrl: path } }) }) },
   }
   let source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8').replace(/^import .*\n/gm, '').replace('export default App', '')
-  source = source.replace('  if (!authReady ||', '  observe({ session, weeklyMeals, shoppingList, lockedDays, recipes, recipeName, ingredientRows, instructions, dietTags, selectedCategories, editingRecipeId, recipeUrl, imageUrl, imageFile, viewingRecipe, expandedRecipeId, swapOptions, pantryItems, checkedShoppingItems, onboardingAnswers, onboardingStep, searchTerm, pantrySearch, activeTab, selectedCategory, swipingDay, preferredDinnerCount, recommendationTarget, changeDinnerCount, addDinner, removeDinner, toggleDayLock, generateWeeklyMeals, regenerateMeal, cookTonight, getRecipes, addRecipe, importRecipeFromUrl, deleteRecipe, beginRecipeEdit, cancelRecipeEdit, recipeSaving, logout, recipeLoad, pantryLoad, checkedLoad, importing, changePantryItem, changeShoppingCheck, loadPantryItems, loadCheckedShoppingItems, passwordSetupRequired, passwordSetupStatus, completePasswordSetup, newPassword, confirmPassword });\n  if (!authReady ||')
-  const helpers = { ...account, ...shopping, ...ingredients, ...pantry, ...shoppingDisplay }
+  source = source.replace('  if (!authReady ||', '  observe({ favoriteIds, favoritesError, discoveryQueue, discoveryRecipe, discover, libraryCollection, session, weeklyMeals, shoppingList, lockedDays, recipes, recipeName, ingredientRows, instructions, dietTags, selectedCategories, editingRecipeId, recipeUrl, imageUrl, imageFile, viewingRecipe, expandedRecipeId, swapOptions, pantryItems, checkedShoppingItems, onboardingAnswers, onboardingStep, searchTerm, pantrySearch, activeTab, selectedCategory, swipingDay, preferredDinnerCount, recommendationTarget, changeDinnerCount, addDinner, removeDinner, toggleDayLock, generateWeeklyMeals, regenerateMeal, cookTonight, getRecipes, addRecipe, importRecipeFromUrl, deleteRecipe, beginRecipeEdit, cancelRecipeEdit, recipeSaving, logout, recipeLoad, pantryLoad, checkedLoad, importing, changePantryItem, changeShoppingCheck, loadPantryItems, loadCheckedShoppingItems, passwordSetupRequired, passwordSetupStatus, completePasswordSetup, newPassword, confirmPassword });\n  if (!authReady ||')
+  const helpers = { ...account, ...shopping, ...ingredients, ...pantry, ...shoppingDisplay, ...discovery }
   const code = transformSync('App.jsx', source, { jsx: { runtime: 'classic' } }).code
   const App = new Function('React', 'useState', 'useRef', 'useEffect', 'useCallback', 'initialAuthCallbackType', 'supabase', 'observe', 'window', 'alert', 'Date', ...Object.keys(helpers), code + '\nreturn App')(
     React, React.useState, React.useRef, React.useEffect, React.useCallback, callbackType, supabase, value => { snapshot = value }, { matchMedia: query => ({ matches: reducedMotion && query === '(prefers-reduced-motion: reduce)' }), localStorage: storage, location: { reload() { reloads++ } }, confirm(message) { confirmations.push(message); return confirmResult } }, message => alerts.push(message), class extends Date { toLocaleDateString(...args) { return weekday || super.toLocaleDateString(...args) } }, ...Object.values(helpers))
@@ -2541,4 +2542,158 @@ test('plan count reads zero, one or multiple dinners planned with correct singul
     assert.equal(nodeText(app.nodes(header).find(node=>node.type==='p'&&nodeText(node).includes('planned'))),`${count} ${count===1?'dinner':'dinners'} planned`)
     assert.equal(nodeText(header).includes('dinner slots'),false)
   }
+})
+
+
+const openDiscovery = app => clickButton(app, 'Mix It Up — discover a dinner')
+const discoveryCard = app => app.nodes().find(node => node.props?.className === 'discovery-card')
+const chooseCollection = (app, value) => { app.nodes().find(node => node.props?.['aria-label'] === 'Recipe collection').props.onChange({target:{value}}); app.flush() }
+
+test('discovery presents exactly one eligible recipe, passes without persistence and exhausts without repeats', async () => {
+  const library=dinnerLibrary(), app=await bestApp({library,preferences:shortagePreferences})
+  const before=structuredClone({meals:app.state.weeklyMeals,shopping:app.state.shoppingList}),writes=app.requests.length
+  openDiscovery(app)
+  const seen=new Set()
+  while(app.state.discoveryRecipe) {
+    const recipe=app.state.discoveryRecipe
+    assert.ok(!seen.has(recipe.id));seen.add(recipe.id)
+    assert.equal(app.nodes().filter(node=>node.props?.className==='discovery-card').length,1)
+    assert.ok(recipe.diet_tags.includes('Vegan'));assert.ok(recipe.diet_tags.includes('Peanut-Free'))
+    clickButton(app,'Pass')
+  }
+  assert.equal(seen.size,library.length)
+  assert.ok(nodeText(app.nodes()).includes('You’ve explored every dinner'))
+  assert.deepEqual({meals:app.state.weeklyMeals,shopping:app.state.shoppingList},before)
+  assert.equal(app.requests.length,writes)
+  assert.equal(app.storage.getItem(discovery.favoritesKey('A')),null)
+  clickButton(app,'Browse again');assert.ok(app.state.discoveryRecipe)
+})
+
+test('Love It saves only favorites; collection combines with search/category and persists after refresh', async () => {
+  const library=dinnerLibrary(),app=await bestApp({library,meals:[{day:'Sunday',meal:library[0]}],locks:['Sunday']})
+  const before=structuredClone({meals:app.state.weeklyMeals,shopping:app.state.shoppingList,locks:app.state.lockedDays,checks:app.state.checkedShoppingItems})
+  const cache=app.storage.getItem(account.plannerCacheKey('A')),writes=app.requests.length
+  openDiscovery(app);const loved=app.state.discoveryRecipe
+  clickButton(app,'Love It')
+  assert.deepEqual(app.state.favoriteIds,[loved.id])
+  assert.deepEqual({meals:app.state.weeklyMeals,shopping:app.state.shoppingList,locks:app.state.lockedDays,checks:app.state.checkedShoppingItems},before)
+  assert.equal(app.storage.getItem(account.plannerCacheKey('A')),cache)
+  assert.equal(app.requests.length,writes)
+  clickButton(app,'📖 Recipes');chooseCollection(app,'favorites')
+  let cards=app.nodes().filter(node=>node.props?.className==='recipe-card')
+  assert.equal(cards.length,1);assert.ok(nodeText(cards[0]).includes(loved.name))
+  app.nodes().find(node=>node.props?.placeholder==='Search recipes...').props.onChange({target:{value:'does not exist'}});app.flush()
+  assert.equal(app.nodes().filter(node=>node.props?.className==='recipe-card').length,0)
+  const reload=appHarness(app.storage);await reload.ready('A',library)
+  assert.deepEqual(reload.state.favoriteIds,[loved.id])
+  openDiscovery(reload);assert.equal(reload.state.discoveryQueue.length,library.length,'discovery session resets on refresh')
+})
+
+test('discovery View Recipe opens existing details without advancing, and return retains the browsing session', async () => {
+  const app=await bestApp({library:dinnerLibrary()});openDiscovery(app)
+  const current=app.state.discoveryRecipe.id
+  clickButton(app,'View Recipe');assert.equal(app.state.viewingRecipe.id,current)
+  assert.equal(app.state.discoveryRecipe.id,current);closeDetails(app)
+  clickButton(app,'Pass');const next=app.state.discoveryRecipe.id
+  clickButton(app,'Back to Plan');openDiscovery(app)
+  assert.equal(app.state.discoveryRecipe.id,next)
+  assert.ok(!app.state.discoveryQueue.includes(current))
+})
+
+test('discovery Add to Plan appends without loving, replacing, unlocking or changing the count preference', async () => {
+  const library=dinnerLibrary(),app=await bestApp({library,meals:[{day:'Sunday',meal:library[0]}],locks:['Sunday']})
+  openDiscovery(app)
+  if(app.state.discoveryRecipe.id===library[0].id) clickButton(app,'Pass')
+  const first=structuredClone(app.state.weeklyMeals[0]),candidate=app.state.discoveryRecipe.id,count=app.state.preferredDinnerCount,writes=app.requests.length
+  clickButton(app,'Add to Plan')
+  assert.equal(app.state.weeklyMeals.length,2)
+  assert.deepEqual(app.state.weeklyMeals[0],first)
+  assert.equal(app.state.weeklyMeals[1].meal.id,candidate)
+  assert.deepEqual(app.state.lockedDays,['Sunday']);assert.equal(app.state.preferredDinnerCount,count)
+  assert.deepEqual(app.state.favoriteIds,[]);assert.equal(app.requests.length,writes)
+  assertPlannerCacheMatches(app)
+})
+
+test('discovery disables duplicate/full-plan additions and unavailable favorites', async () => {
+  const library=dinnerLibrary(),app=await bestApp({library:[library[0]],meals:[{day:'Monday',meal:library[0]}]})
+  openDiscovery(app);assert.equal(buttonNamed(app,'Add to Plan').props.disabled,true)
+  const full=await bestApp({library,meals:dinnerSlots.map((day,i)=>({day,meal:library[i]}))})
+  openDiscovery(full);assert.equal(buttonNamed(full,'Add to Plan').props.disabled,true)
+  const before=structuredClone(full.state.weeklyMeals)
+  full.state.discover('add');full.flush();assert.deepEqual(full.state.weeklyMeals,before)
+  const broken=memoryStorage();broken.setItem(discovery.favoritesKey('A'),'bad')
+  const error=appHarness(broken);await error.ready('A',library);openDiscovery(error)
+  assert.equal(buttonNamed(error,'Love It').props.disabled,true)
+  assert.ok(nodeText(error.nodes()).includes('Favorites could not be loaded or saved'))
+})
+
+test('discovery swipe actions and accessible buttons agree; vertical/canceled/button-origin gestures do nothing', async () => {
+  const app=await bestApp({library:dinnerLibrary()});openDiscovery(app)
+  const start=(x=150,y=100,control=false)=>discoveryCard(app).props.onTouchStart({target:{closest:()=>control},touches:[{clientX:x,clientY:y}]})
+  const end=(x,y)=>{discoveryCard(app).props.onTouchEnd({changedTouches:[{clientX:x,clientY:y}]});app.flush()}
+  const first=app.state.discoveryRecipe.id
+  start();end(160,240);assert.equal(app.state.discoveryRecipe.id,first)
+  start();discoveryCard(app).props.onTouchCancel();end(50,100);assert.equal(app.state.discoveryRecipe.id,first)
+  start(150,100,true);end(50,100);assert.equal(app.state.discoveryRecipe.id,first)
+  start();end(50,100);assert.notEqual(app.state.discoveryRecipe.id,first);assert.deepEqual(app.state.favoriteIds,[])
+  const second=app.state.discoveryRecipe.id
+  start();end(250,100);assert.deepEqual(app.state.favoriteIds,[second])
+  assert.equal(app.state.weeklyMeals.length,0)
+})
+
+test('favorites/discovery reset on account switch and stale actions cannot affect the next account', async () => {
+  const library=dinnerLibrary(),app=await bestApp({library});openDiscovery(app)
+  const stale=app.state.discover,old=app.state.discoveryRecipe.id
+  clickButton(app,'Love It');assert.deepEqual(app.state.favoriteIds,[old])
+  await app.ready('B',library);assert.deepEqual(app.state.favoriteIds,[]);assert.equal(app.state.discoveryQueue,null)
+  stale('love');stale('add');app.flush();assert.deepEqual(app.state.favoriteIds,[]);assert.equal(app.state.weeklyMeals.length,0)
+  await app.ready('A',library);assert.deepEqual(app.state.favoriteIds,[old]);assert.equal(app.state.discoveryQueue,null)
+})
+
+test('discovery rechecks restrictions, has no-match state and guards repeated actions before render', async () => {
+  const safe=eligibleMeal(9001),unsafe={...eligibleMeal(9002),diet_tags:[]}
+  const app=await bestApp({library:[safe,unsafe],preferences:shortagePreferences});openDiscovery(app)
+  assert.equal(app.state.discoveryRecipe.id,safe.id)
+  app.state.discover('love');app.state.discover('love');app.flush()
+  assert.deepEqual(app.state.favoriteIds,[safe.id]);assert.equal(app.state.discoveryRecipe,undefined)
+  const empty=await bestApp({library:[unsafe],preferences:shortagePreferences});openDiscovery(empty)
+  assert.ok(nodeText(empty.nodes()).includes('No matching dinners right now'))
+  assert.equal(discoveryCard(empty),undefined)
+})
+
+
+test('failed favorites writes keep the current card and all planner data unchanged', async () => {
+  const app=await bestApp({library:dinnerLibrary()});openDiscovery(app)
+  const current=app.state.discoveryRecipe.id,before=structuredClone({meals:app.state.weeklyMeals,shopping:app.state.shoppingList})
+  const original=app.storage.setItem
+  app.storage.setItem=(key,value)=>{if(key===discovery.favoritesKey('A')) throw new Error('Quota');original(key,value)}
+  clickButton(app,'Love It')
+  assert.equal(app.state.discoveryRecipe.id,current);assert.deepEqual(app.state.favoriteIds,[])
+  assert.equal(app.state.favoritesError,true)
+  assert.deepEqual({meals:app.state.weeklyMeals,shopping:app.state.shoppingList},before)
+  app.storage.setItem=original
+  clickButton(app,'Retry Favorites');clickButton(app,'Love It')
+  assert.deepEqual(app.state.favoriteIds,[current])
+})
+
+test('loving preserves existing favorites written by another tab and favorite category filtering composes', async () => {
+  const library=dinnerLibrary();library[0].categories=['Chicken']
+  const app=await bestApp({library});openDiscovery(app)
+  const id=app.state.discoveryRecipe.id,other=library.find(recipe=>recipe.id!==id).id
+  discovery.saveFavorites(app.storage,{userId:'A',generation:1},{userId:'A',generation:1},[other])
+  clickButton(app,'Love It');assert.deepEqual(new Set(app.state.favoriteIds),new Set([other,id]))
+  clickButton(app,'📖 Recipes');chooseCollection(app,'favorites')
+  app.nodes().find(node=>node.type==='select'&&node.props.value==='All').props.onChange({target:{value:'Chicken'}});app.flush()
+  const cards=app.nodes().filter(node=>node.props?.className==='recipe-card')
+  assert.equal(cards.length,app.state.favoriteIds.includes(library[0].id)?1:0)
+})
+
+test('discovery unavailable state does not expose stale cards or allow actions', async () => {
+  const app=await bestApp({library:dinnerLibrary()});openDiscovery(app)
+  const current=app.state.discoveryRecipe
+  const pending=app.state.getRecipes();await app.pump()
+  assert.equal(discoveryCard(app),undefined);assert.ok(nodeText(app.nodes()).includes('Loading recipes'))
+  app.state.discover('love',current);app.flush();assert.deepEqual(app.state.favoriteIds,[])
+  latestRequest(app,'recipes').resolve({data:null,error:{message:'unavailable'}});await pending;await app.pump()
+  assert.equal(discoveryCard(app),undefined);assert.ok(nodeText(app.nodes()).includes('Retry loading recipes'))
 })
