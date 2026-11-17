@@ -125,9 +125,9 @@ test('garlic generated entries hide and restore unchanged labels/keys/checked al
   const original = buildShoppingList(meals)
   const generated = visible(original)
   const garlic = generated.filter(item => item.label.includes('garlic'))
-  assert.equal(garlic.length, 3)
-  assert.ok(garlic.some(item => item.label === 'garlic — 5 cloves'))
-  assert.ok(garlic.some(item => item.label === '3 cloves garlic (2)'))
+  assert.equal(garlic.length, 2)
+  assert.ok(garlic.some(item => item.label === 'garlic — 11 cloves'))
+  assert.ok(garlic.some(item => item.label === 'garlic cloves (1)'))
   assert.equal(generated.find(item => item.label.includes('rice')).label, '3 cup rice')
   const extra = { key: '3 cloves garlic', label: '3 cloves garlic', extra: true, legacyGroups: [['3 cloves garlic']] }
   original.Other.push(extra)
@@ -173,13 +173,13 @@ test('structured removals ignore aggregate quantity but preserve ingredient/unit
 })
 
 test('legacy removals use exact source text, survive occurrence-count changes, and do not use Pantry aliases', () => {
-  const oldMeals = [{ meal: { ingredients: ['3 cloves garlic', 'garlic cloves'] } }]
-  const moreMeals = [...oldMeals, { meal: { ingredients: ['3 cloves garlic'] } }]
+  const oldMeals = [{ meal: { ingredients: ['garlic to taste', 'garlic cloves'] } }]
+  const moreMeals = [...oldMeals, { meal: { ingredients: ['garlic to taste'] } }]
   const previous = buildShoppingList(oldMeals)
-  const target = allItems(previous).find(item => item.label === '3 cloves garlic (1)')
+  const target = allItems(previous).find(item => item.label === 'garlic to taste (1)')
   const removed = removeShoppingItem(previous, target)
   const rebuilt = rebuildShoppingList(removed, oldMeals, moreMeals)
-  assert.ok(allItems(rebuilt).some(item => item.label === '3 cloves garlic (2)' && item.userRemoved))
+  assert.ok(allItems(rebuilt).some(item => item.label === 'garlic to taste (2)' && item.userRemoved))
   assert.deepEqual(removalVisible(rebuilt).map(item => item.label), ['garlic cloves (1)'])
   assert.notEqual(shoppingRemovalKey(target), shoppingRemovalKey(allItems(previous).find(item => item.label === 'garlic cloves (1)')))
 })

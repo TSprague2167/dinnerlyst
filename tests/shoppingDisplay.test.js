@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { shoppingDisplayLabel, shoppingDisplayCategory, shoppingDisplayGroups } from '../src/shoppingDisplay.js'
+import { buildPreviousShoppingList } from '../src/shoppingLegacy.js'
 import { buildShoppingList, isShoppingItemVisible, isShoppingItemChecked, shoppingRemovalKey, shoppingCheckIdentities } from '../src/shoppingList.js'
 
 const generated = text => Object.values(buildShoppingList([{ meal: { ingredients: [text] } }])).flat()[0]
@@ -8,7 +9,7 @@ const freeze = value => { if (value && typeof value === 'object') { Object.value
 
 test('display hides only singleton suffixes proven by generated metadata', () => {
   for (const source of ['1 yellow onion, diced', 'salt and pepper, to taste', '2 tablespoons tomato paste', 'bread (gluten-free)', 'Box (1)']) {
-    const item = freeze(generated(source))
+    const item = freeze(Object.values(buildPreviousShoppingList([{meal:{ingredients:[source]}}])).flat()[0])
     assert.equal(shoppingDisplayLabel(item), source)
     assert.equal(item.key, `${source} (1)`)
     assert.equal(item.label, `${source} (1)`)

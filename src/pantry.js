@@ -1,17 +1,9 @@
 import { getIngredientRows, formatIngredient } from './ingredients.js'
 
-// Compare whole ingredient names after a bounded quantity/unit prefix removal.
-// This is only for Pantry comparisons: never rewrite shopping labels or quantities.
-const leadingQuantityAndUnit = /^(?:\d+ \d+\/[1-9]\d*|\d+\/[1-9]\d*|\d+(?:\.\d+)?) (?:cloves?|cups?|tablespoons?|tbsp|teaspoons?|tsp|ounces?|oz|pounds?|lbs?|cubes?|whole) (?=\S)/
-const singularAliases = {
-  eggs: 'egg', tomatoes: 'tomato', potatoes: 'potato', onions: 'onion',
-  lemons: 'lemon', limes: 'lime', carrots: 'carrot', avocados: 'avocado',
-  'garlic cloves': 'garlic', 'garlic clove': 'garlic',
-}
+import { parseIngredientText } from './ingredientIdentity.js'
+
 export function normalizePantryName(value) {
-  if (typeof value !== 'string') return ''
-  const name = value.trim().replace(/\s+/g, ' ').toLowerCase().replace(leadingQuantityAndUnit, '')
-  return singularAliases[name] || name
+  return typeof value === 'string' ? parseIngredientText(value).name : ''
 }
 export function pantryHasIngredient(ingredient, pantryNames = []) {
   const name = normalizePantryName(ingredient)
